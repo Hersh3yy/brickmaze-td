@@ -83,7 +83,13 @@ export interface WorldSprites {
    * it costs nothing per frame.
    */
   detail: 'native' | 'scale2x';
-  /** 16x16 turret grids, seen from above, pointing right (0 rad). */
+  /**
+   * 'rotate': turret grids are seen from above, point right (0 rad) and turn to aim.
+   * 'face': grids are side views facing right that stand still and mirror to face a target
+   * on the left, drawn a little raised so the figure stands on its tile.
+   */
+  turretView: 'rotate' | 'face';
+  /** 16x16 turret grids pointing or facing right. */
   turrets: Record<TowerType, SpriteGrid>;
   /**
    * Shared turret palette. C/L/D are filled in per element from `elements`, so every

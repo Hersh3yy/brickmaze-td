@@ -571,19 +571,22 @@ function drawPixelTower(
   // (No pulsing glow square under the turret any more: the turret's own palette and the
   // brick under it already show the element, and the pulse was noise across the board.)
 
-  // Draw rotating 16x16 pixel sprite with barrel recoil kickback
+  const kick = tower.type === 'pulse' ? 0 : Math.round(tower.recoil * 3.5);
   ctx.translate(cx, cy);
-  if (tower.type !== 'pulse') {
-    ctx.rotate(tower.angle);
+  if (spriteAtlas.turretsFace()) {
+    // Side-view figure: stands still, mirrors to face targets on the left, and sits two
+    // pixels raised so its base rests on the lower part of the tile.
+    if (tower.type !== 'pulse' && Math.cos(tower.angle) < 0) ctx.scale(-1, 1);
+    ctx.drawImage(sprite, -16 - kick, -18, 32, 32);
   } else {
-    ctx.rotate(nowSec * 0.6);
+    // Top-down turret: rotates to aim, with barrel recoil kickback.
+    ctx.rotate(tower.type !== 'pulse' ? tower.angle : nowSec * 0.6);
+    ctx.drawImage(sprite, -16 - kick, -16, 32, 32);
   }
 
-  const kick = tower.type === 'pulse' ? 0 : Math.round(tower.recoil * 3.5);
-  ctx.drawImage(sprite, -16 - kick, -16, 32, 32);
-
-  // Element-colored muzzle flash spark
-  if (tower.muzzleFlash > 0 && tower.type !== 'pulse') {
+  // Element-colored muzzle flash spark (a lobbing catapult has no muzzle in side view)
+  const flashes = tower.type !== 'pulse' && !(tower.type === 'cannon' && spriteAtlas.turretsFace());
+  if (tower.muzzleFlash > 0 && flashes) {
     ctx.fillStyle = element === 'kinetic' ? '#FEF08A' : BRICK_COLORS[element].lightHex;
     ctx.fillRect(13 - kick, -4, 6, 8);
     ctx.fillStyle = '#FFFFFF';

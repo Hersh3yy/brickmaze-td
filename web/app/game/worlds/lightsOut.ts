@@ -10,8 +10,8 @@ import {
  * Lights Out: when the house goes dark the toys wake up (the Night Shift) and hold the
  * floor against the Wainscot Clan, the mice that live in the walls and want the pantry.
  *
- * Originality rules for this World: folk toy archetypes only (wind-up tin soldier, drummer,
- * spoon catapult, sewing needle), no names or designs from any film or toy line, no
+ * Originality rules for this World: folk toy archetypes only (green plastic army men, a
+ * wind-up key, a drummer, a spoon catapult, a sewing needle), no names or designs from any film or toy line, no
  * studded brand-like bricks (walls are wooden blocks), no red-cross symbol.
  *
  * Style: 1-px outline in one shared night-ink colour, light from the top left, at most four
@@ -41,6 +41,7 @@ const walk = (body: SpriteGrid, legsA: SpriteGrid, legsB: SpriteGrid): [SpriteGr
 const sprites: WorldSprites = {
   detail: 'scale2x',
   creepFacing: 'side',
+  turretView: 'face',
   elements: {
     kinetic: { c: '#C9A27E', l: '#EBD3B5', d: '#8A6544' },
     yellow: { c: '#F5B82E', l: '#FDE68A', d: '#B7791F' },
@@ -49,6 +50,9 @@ const sprites: WorldSprites = {
   },
   turretPalette: {
     o: INK,
+    G: '#6E8B3D',
+    g: '#A3BC62',
+    H: '#465C25',
     S: '#56606E',
     M: '#98A3B3',
     m: '#E1E6EE',
@@ -60,84 +64,84 @@ const sprites: WorldSprites = {
     P: '#F1E7D3',
     N: '#EEF1F5',
   },
+  // Green plastic army men on round bases, seen from the side and facing right; the
+  // renderer mirrors them to face targets on the left. The base is element-painted.
   turrets: {
-    // Clockwork Corporal: tin soldier seen from above, element-painted helmet,
-    // two cork pop-guns forward and a brass winding key on its back.
+    // Clockwork Corporal: rifleman firing from the hip, brass winding key on his back.
     repeater: [
-      '................',
-      '................',
-      '....oooooooooooo',
-      '...oMmmmMSwwwwRo',
-      '..oMmMMMMSoooooo',
-      '.ooMMooooMSo....',
-      'okoMoCCLLoMSo...',
-      'kKoMoCLLLoMSo...',
-      'kKoMoCCCLoMSo...',
-      'okoMoDDCCoMSo...',
-      '.ooMMooooMSo....',
-      '..oSMMMMMSoooooo',
-      '...oSSSSSSwwwwRo',
-      '....oooooooooooo',
-      '................',
-      '................',
+      '.....oooo.......',
+      '....oggGGo......',
+      '...ogGGGGGo.....',
+      '..oooHHHHooo....',
+      '....oGgGGo......',
+      '....oGgGHo......',
+      '...ooGGGGoo.....',
+      '.kooGgGGGGGooooo',
+      'kKkoGgGGooHHHHHo',
+      '.kooGGGGGoooooo.',
+      '...oGGGGGo......',
+      '...oGGoGGo......',
+      '...oHHooHHo.....',
+      '..oooooooooo....',
+      '.oggggggggggo...',
+      '..oHHHHHHHHo....',
     ],
-    // Spoon Gunner: soldier on a wooden plank working a spoon catapult; the spoon bowl
-    // holds an element-coloured marble.
+    // Spoon Gunner: kneeling beside a spoon catapult loaded with a marble.
     cannon: [
       '................',
-      '................',
-      'ooooooooo.......',
-      'owwwwwwWo...ooo.',
-      'owoooooWo..oMmMo',
-      'owoCCLoWo.oMLLMo',
-      'owoCLLoWo.oLCLMo',
-      'owoCLLoWMMMMCCMo',
-      'owoCCCoWMMMMDCMo',
-      'owoDDCoWo.oMDDMo',
-      'owoooooWo.oMMMMo',
-      'owWWWWWWo..oMmo.',
-      'ooooooooo...oo..',
-      '................',
-      '................',
-      '................',
+      '..oooo.....ooo..',
+      '.oggGGo...oMmMo.',
+      'oGGGGGGo..oMLCo.',
+      'ooHHHHoo...oMo..',
+      '.oGgGGo...oMo...',
+      '.oGgGHo..oMo....',
+      'ooGGGGGooMo.....',
+      'oGgGGGGGMo......',
+      'oGGGGGooMo......',
+      'oGGGGGoWWWWWWo..',
+      'oGGoGGowwwwwwo..',
+      'oHHoHHoooooooo..',
+      'ooooooooooooooo.',
+      'ogggggggggggggo.',
+      '.oHHHHHHHHHHHo..',
     ],
-    // Drum Sergeant: a drum seen from above, element-painted hoop, crossed sticks.
+    // Drum Sergeant: drummer with sticks up and a painted drum in front.
     pulse: [
-      '.....oooooo.....',
-      '...ooLLLLLLoo...',
-      '..oLLCCCCCCLLo..',
-      '.oLCooooooooCLo.',
-      '.oCoKPPPPPPKoCo.',
-      'oLCoPwPPPPwPoCLo',
-      'oCCoPPwPPwPPoCCo',
-      'oCCoPPPwwPPPoCCo',
-      'oCCoPPPwwPPPoCCo',
-      'oCCoPPwPPwPPoCCo',
-      'oDCoPwPPPPwPoCDo',
-      '.oCoKPPPPPPKoCo.',
-      '.oDCooooooooCDo.',
-      '..oDDCCCCCCDDo..',
-      '...ooDDDDDDoo...',
-      '.....oooooo.....',
+      '.....oooo.......',
+      '....oggGGo...o..',
+      '...ogGGGGGo.oWo.',
+      '..oooHHHHoooWo..',
+      '....oGgGGooWo...',
+      '....oGgGHoGo....',
+      '...ooGGGGGo.....',
+      '..oGgGGGGGo.....',
+      '..oGGooooooooo..',
+      '..oGoPPPPPPPPo..',
+      '..oGoCDCDCDCDo..',
+      '..oGoCCDCDCDCo..',
+      '..oHoDDDDDDDDo..',
+      '.oooooooooooooo.',
+      'oggggggggggggggo',
+      '.oHHHHHHHHHHHHo.',
     ],
-    // Needlepoint: soldier lying flat behind a long sewing-needle rifle with a brass bead.
+    // Needlepoint: lying flat behind a long sewing-needle rifle with a brass bead.
     sniper: [
       '................',
       '................',
       '................',
-      '..ooooo.........',
-      '.oSMMMSo...ooo..',
-      '.oMoooooo.okKo..',
-      'oMoCCLLLoooooooo',
-      'oMoCLLLLoWWNNNNN',
-      'oMoCCCLLoWWooooo',
-      'oMoDDCCCoooo....',
-      '.oMoooooo.......',
-      '.oSMMMSo........',
-      '..ooooo.........',
       '................',
       '................',
       '................',
+      '..oooo..........',
+      '.ogGGGo....okko.',
+      'ooHHHHoooooooooo',
+      'oGgGGGHHHHNNNNNm',
+      'oGGGGGGGGGoooooo',
+      'oHHHooHHHHo.....',
+      '.ooo..oooo......',
+      '.oooooooooooo...',
+      'oggggggggggggo..',
+      '.oHHHHHHHHHHo...',
     ],
   },
   creeps: {
@@ -459,7 +463,7 @@ export const lightsOut: WorldDefinition = {
     towers: {
       repeater: {
         name: 'Clockwork Corporal',
-        description: 'A wind-up tin soldier with twin cork pop-guns. Fires fast and spreads element ammo.',
+        description: 'A wind-up plastic rifleman. Fires fast and spreads element ammo.',
       },
       cannon: {
         name: 'Spoon Gunner',
@@ -467,11 +471,11 @@ export const lightsOut: WorldDefinition = {
       },
       pulse: {
         name: 'Drum Sergeant',
-        description: 'Every drumbeat sends a ring out that hits every mouse inside it.',
+        description: 'A plastic drummer. Every beat sends out a ring that hits every mouse inside it.',
       },
       sniper: {
         name: 'Needlepoint',
-        description: 'A sewing-needle rifle with the longest reach. Goes straight through shields.',
+        description: 'Lies flat behind a sewing-needle rifle with the longest reach. Goes straight through shields.',
       },
     },
     elements: {

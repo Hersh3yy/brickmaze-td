@@ -140,6 +140,11 @@ class PixelSpriteAtlas {
     return pair ? pair[frameIndex] : null;
   }
 
+  /** Whether turrets are side views that mirror to face a target instead of rotating. */
+  public turretsFace(): boolean {
+    return this.world().sprites.turretView === 'face';
+  }
+
   /** Whether creep grids face right and should be mirrored when walking left. */
   public creepsFaceSideways(): boolean {
     return this.world().sprites.creepFacing === 'side';

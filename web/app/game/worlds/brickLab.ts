@@ -13,6 +13,7 @@ import {
 
 const sprites: WorldSprites = {
   detail: 'native',
+  turretView: 'rotate',
   creepFacing: 'front',
   elements: {
     kinetic: { c: '#94A3B8', l: '#E2E8F0', d: '#475569' },
