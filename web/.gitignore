@@ -9,3 +9,6 @@ dist
 .env.*
 !.env.example
 .DS_Store
+
+# Balance runs write their latest report here
+balance/last-report.txt

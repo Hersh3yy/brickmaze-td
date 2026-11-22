@@ -33,6 +33,7 @@ import type {
   Particle,
   Projectile,
   TargetingMode,
+  TileCombatModifiers,
   Tower,
 } from './types';
 
@@ -157,6 +158,28 @@ function carriesDebuff(c: Creep, venom: boolean, burn: boolean): boolean {
     return true;
   }
   return burn && c.burnTimer > DEBUFF_REFRESH_WINDOW;
+}
+
+/**
+ * Brick bonuses only change when the board changes, and every board change in the game
+ * swaps in a new grid object, so results are cached per grid. Without this, every tower
+ * recomputed its bonuses on every frame, even with nothing in range.
+ */
+const tileModsCache = new WeakMap<GridCell[][], Map<number, TileCombatModifiers>>();
+
+export function cachedTileModifiers(grid: GridCell[][], x: number, y: number): TileCombatModifiers {
+  let byTile = tileModsCache.get(grid);
+  if (!byTile) {
+    byTile = new Map();
+    tileModsCache.set(grid, byTile);
+  }
+  const key = y * 1024 + x;
+  let mods = byTile.get(key);
+  if (!mods) {
+    mods = computeTileModifiers(grid, x, y);
+    byTile.set(key, mods);
+  }
+  return mods;
 }
 
 /** Default targeting for a tower on (x, y): venom-loaded towers spread their debuff. */
@@ -541,7 +564,7 @@ export function stepSimulation(
     if (tower.cooldown > 0) continue;
 
     const def = TOWER_DEFS[tower.type];
-    const mods = computeTileModifiers(world.grid, tower.x, tower.y);
+    const mods = cachedTileModifiers(world.grid, tower.x, tower.y);
     const dmgScale = tower.level === 1 ? 1 : tower.level === 2 ? 1.6 : 2.4;
     const rateScale = tower.level === 1 ? 1 : tower.level === 2 ? 1.15 : 1.32;
     const rangeScale = 1 + (tower.level - 1) * 0.1;
