@@ -63,6 +63,31 @@ export interface ArenaMatchOptions {
 
 export type HoverTone = 'neutral' | 'good' | 'info' | 'bad';
 
+/** A tile's on-screen box in px, relative to the board wrapper, plus the wrapper's size. */
+export interface TileRect {
+  x: number;
+  y: number;
+  size: number;
+  boxW: number;
+  boxH: number;
+  /** Free px under the board inside the stage (large on portrait phones). */
+  spaceBelow: number;
+}
+
+/**
+ * The small menu drawn on the board next to the selected tile.
+ * - draft: one of this turn's 4 bricks, during the pick step: keep it or fuse into it.
+ * - build: an empty brick or gray wall outside the draft: mount a weapon, or remove the wall.
+ */
+export type TileMenu =
+  | {
+      kind: 'draft';
+      coord: Coord;
+      keepColor: BrickColor;
+      fusions: { option: TurnFusionOption; partner: Coord }[];
+    }
+  | { kind: 'build'; coord: Coord; isGray: boolean };
+
 function rollFourBricks(): BrickColor[] {
   const hand: BrickColor[] = [];
   for (let i = 0; i < BRICKS_PER_TURN; i++) {
@@ -163,6 +188,33 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     const c = selectedCoord.value;
     return c ? towers.value.find((t) => t.x === c.x && t.y === c.y) ?? null : null;
   });
+  const tileMenu = computed<TileMenu | null>(() => {
+    const coord = selectedCoord.value;
+    if (!coord) return null;
+    const cell = grid.value[coord.y]?.[coord.x];
+    if (!cell) return null;
+
+    if (phase.value === 'BUILD_PICK') {
+      const index = pickIndex.value;
+      const entry = index === null ? undefined : placedTurnCoords.value[index];
+      if (!entry || !cell.color || entry.x !== coord.x || entry.y !== coord.y) return null;
+      return {
+        kind: 'draft',
+        coord,
+        keepColor: cell.color,
+        fusions: fusionOptions.value.map((option) => {
+          const p = placedTurnCoords.value[option.indices[1]]!;
+          return { option, partner: { x: p.x, y: p.y } };
+        }),
+      };
+    }
+
+    if (phase.value !== 'BUILD_MANAGE' && phase.value !== 'COMBAT') return null;
+    if (placingTowerType.value || relocatingTowerId.value) return null;
+    if (!isBrickCell(cell) || selectedTower.value) return null;
+    return { kind: 'build', coord, isGray: cell.kind === 'GRAY_WALL' };
+  });
+
   const bossPreview = computed(() => {
     if (wave.value % 5 !== 0) return null;
     const def = getWaveDefinition(wave.value, difficulty);
@@ -566,6 +618,8 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
         selectDraftBrick(cell.turnDraftIndex);
         return;
       }
+      // Clicking anywhere else closes the keep/fuse menu.
+      pickIndex.value = null;
       selectedCoord.value = coord;
       return;
     }
@@ -603,7 +657,8 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     }
 
     selectedCoord.value = coord;
-    mobileInspectorOpen.value = Boolean(existingTower || isBrickCell(cell));
+    // Bricks and gray walls get the on-board menu; the bottom sheet is for towers.
+    mobileInspectorOpen.value = Boolean(existingTower);
   }
 
   /** Mouse moves fire per pixel; only a change of tile should recompute the path preview. */
@@ -612,6 +667,12 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     if (prev === coord) return;
     if (prev && coord && prev.x === coord.x && prev.y === coord.y) return;
     hoverCoord.value = coord;
+  }
+
+  /** Closes the board menu by clearing the selection (and the draft pick). */
+  function closeTileMenu() {
+    selectedCoord.value = null;
+    if (phase.value === 'BUILD_PICK') pickIndex.value = null;
   }
 
   function cancelInteraction() {
@@ -670,6 +731,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
       placingTowerType.value = null;
       relocatingTowerId.value = null;
       mobileInspectorOpen.value = false;
+      closeTileMenu();
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
       clearGrayBrick(selected);
     } else if (e.code === 'Space' && phase.value === 'BUILD_MANAGE') {
@@ -686,7 +748,8 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
       else if (e.key === 'Enter') keepSelectedBrick();
     } else if (phase.value === 'BUILD_MANAGE' || phase.value === 'COMBAT') {
       const type = TOWER_LIST[Number(e.key) - 1];
-      if (type) selectTowerType(type);
+      if (type && tileMenu.value?.kind === 'build') placeTowerOnSelected(type);
+      else if (type) selectTowerType(type);
     }
   }
 
@@ -729,6 +792,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     hoverPreview,
     selectedCell,
     selectedTower,
+    tileMenu,
     bossPreview,
     // renderer input (plain object, never make this reactive)
     frame,
@@ -750,6 +814,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     clickTile,
     hoverTile,
     cancelInteraction,
+    closeTileMenu,
     toggleMute,
     setSpeed,
     continueEndless,

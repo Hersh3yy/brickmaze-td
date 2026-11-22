@@ -7,7 +7,6 @@ import {
   DIFFICULTY_DEFS,
   SYNERGY_CATALOG,
   TOWER_DEFS,
-  TOWER_LIST,
   getWaveDefinition,
 } from '~/game/domain/constants';
 import { tileAppliesDebuff } from '~/game/domain/simulation';
@@ -20,7 +19,6 @@ import type {
   GridCell,
   TargetingMode,
   Tower,
-  TowerType,
 } from '~/game/domain/types';
 
 const props = defineProps<{
@@ -41,7 +39,6 @@ const emit = defineEmits<{
   sellTower: [towerId: string];
   changeTargeting: [towerId: string, mode: TargetingMode];
   clearGrayBrick: [coord: Coord];
-  placeTower: [type: TowerType];
   closeMobile: [];
 }>();
 
@@ -124,7 +121,6 @@ const cellView = computed(() => {
     mods,
     title,
     effectText,
-    canMount: props.phase === 'BUILD_MANAGE' || props.phase === 'COMBAT',
     canDeleteGray:
       isGray &&
       props.gold >= CLEAR_GRAY_BRICK_COST &&
@@ -307,21 +303,6 @@ const isPreBoss = computed(() => props.wave % 5 === 4);
             : '.'
         }}
       </p>
-    </div>
-
-    <div v-if="cellView.canMount" class="pt-2 border-t border-[#2D3A4D] space-y-2">
-      <div class="text-xs font-semibold text-slate-200">Mount a weapon here</div>
-      <div class="grid grid-cols-1 gap-1.5">
-        <TurretShopCard
-          v-for="tType in TOWER_LIST"
-          :key="tType"
-          :type="tType"
-          :gold="gold"
-          :selected="false"
-          :disabled="false"
-          @select="emit('placeTower', $event)"
-        />
-      </div>
     </div>
 
     <div v-if="cellView.mods.activeSynergies.length > 0" class="pt-2 border-t border-[#2D3A4D]">

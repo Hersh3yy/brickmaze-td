@@ -30,10 +30,10 @@ const {
   waveTotalCreepsUi,
   outcomeSummary,
   pathResult,
-  fusionOptions,
   hoverPreview,
   selectedCell,
   selectedTower,
+  tileMenu,
   bossPreview,
   frame,
   rerollDraft,
@@ -53,6 +53,7 @@ const {
   clickTile,
   hoverTile,
   cancelInteraction,
+  closeTileMenu,
   toggleMute,
   setSpeed,
   continueEndless,
@@ -105,7 +106,22 @@ function exitToLobby() {
         @click-tile="clickTile"
         @right-click="cancelInteraction"
         @open-mobile-inspector="mobileInspectorOpen = true"
-      />
+      >
+        <template #overlay="{ tileRect }">
+          <TileActionMenu
+            v-if="tileMenu"
+            :menu="tileMenu"
+            :gold="gold"
+            :tile-rect="tileRect"
+            :avoid="tileMenu.kind === 'draft' ? placedTurnCoords : []"
+            @keep="keepSelectedBrick"
+            @fuse="fuseTurnPair"
+            @mount="placeTowerOnSelected"
+            @remove="tileMenu && clearGrayBrick(tileMenu.coord)"
+            @close="closeTileMenu"
+          />
+        </template>
+      </MazeCanvasStage>
     </template>
 
     <template #inspector>
@@ -124,7 +140,6 @@ function exitToLobby() {
         @sell-tower="sellTower"
         @change-targeting="changeTargeting"
         @clear-gray-brick="clearGrayBrick"
-        @place-tower="placeTowerOnSelected"
         @close-mobile="mobileInspectorOpen = false"
       />
     </template>
@@ -136,7 +151,6 @@ function exitToLobby() {
         :placed-turn-coords="placedTurnCoords"
         :rerolls-remaining="rerollsRemaining"
         :pick-index="pickIndex"
-        :fusion-options="fusionOptions"
         :gold="gold"
         :placing-tower-type="placingTowerType"
         :creeps-remaining="creepsRemainingUi"
@@ -144,8 +158,6 @@ function exitToLobby() {
         @reroll-draft="rerollDraft"
         @undo-last-brick="undoLastBrick"
         @select-draft-brick="selectDraftBrick"
-        @keep-selected-brick="keepSelectedBrick"
-        @fuse-turn-pair="fuseTurnPair"
         @select-tower-type="selectTowerType"
       />
     </template>

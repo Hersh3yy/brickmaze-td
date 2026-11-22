@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { Info, Maximize2, ZoomIn, ZoomOut } from '@lucide/vue';
-import { CANVAS_HEIGHT, CANVAS_WIDTH, GRID_COLS, GRID_ROWS } from '~/game/domain/constants';
+import { CANVAS_HEIGHT, CANVAS_WIDTH, GRID_COLS, GRID_ROWS, TILE_SIZE } from '~/game/domain/constants';
 import type { Coord, GamePhase } from '~/game/domain/types';
 import { renderArenaFrame } from '~/game/engine/pixelRenderer';
 import type { CameraView, RenderFrameInput } from '~/game/engine/pixelRenderer';
+import type { TileRect } from '~/composables/useArenaMatch';
 
 const props = defineProps<{
   /** Plain mutable object owned by useArenaMatch; read every animation frame. */
@@ -41,7 +42,11 @@ function clampCamera(cam: CameraView): CameraView {
 }
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
+const wrapperRef = ref<HTMLDivElement | null>(null);
 const zoomPct = ref(100);
+/** Bumped whenever the board moves on screen (resize, zoom, pan), so overlays re-place. */
+const layoutTick = ref(0);
+
 
 // Gesture bookkeeping is plain (non-reactive): it changes on every pointer event.
 const drag = {
@@ -62,8 +67,16 @@ const pinch = {
 };
 
 let rafId = 0;
+let resizeObserver: ResizeObserver | null = null;
 
 onMounted(() => {
+  if (wrapperRef.value && typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(() => {
+      layoutTick.value += 1;
+    });
+    resizeObserver.observe(wrapperRef.value);
+  }
+
   const ctx = canvasRef.value?.getContext('2d') ?? null;
   const renderLoop = (ts: number) => {
     if (ctx) {
@@ -75,12 +88,44 @@ onMounted(() => {
   rafId = requestAnimationFrame(renderLoop);
 });
 
-onBeforeUnmount(() => cancelAnimationFrame(rafId));
+onBeforeUnmount(() => {
+  cancelAnimationFrame(rafId);
+  resizeObserver?.disconnect();
+});
 
 function applyCamera(next: CameraView) {
   const clamped = clampCamera(next);
   props.frame.camera = clamped;
   zoomPct.value = Math.round(clamped.zoom * 100);
+  layoutTick.value += 1;
+}
+
+/** Where a grid tile is drawn on screen, for menus placed over the board. */
+function tileRect(coord: Coord): TileRect | null {
+  void layoutTick.value; // re-run when the board moves
+  const canvas = canvasRef.value;
+  const wrapper = wrapperRef.value;
+  if (!canvas || !wrapper) return null;
+  const boxW = canvas.clientWidth;
+  const boxH = canvas.clientHeight;
+  if (boxW <= 0 || boxH <= 0) return null;
+
+  const scale = Math.min(boxW / CANVAS_WIDTH, boxH / CANVAS_HEIGHT);
+  const originX = canvas.offsetLeft + canvas.clientLeft + (boxW - CANVAS_WIDTH * scale) / 2;
+  const originY = canvas.offsetTop + canvas.clientTop + (boxH - CANVAS_HEIGHT * scale) / 2;
+  const cam = props.frame.camera;
+  const stage = wrapper.parentElement;
+  const spaceBelow = stage
+    ? Math.max(0, stage.clientHeight - (wrapper.offsetTop + wrapper.offsetHeight))
+    : 0;
+  return {
+    x: originX + (coord.x * TILE_SIZE * cam.zoom + cam.panX) * scale,
+    y: originY + (coord.y * TILE_SIZE * cam.zoom + cam.panY) * scale,
+    size: TILE_SIZE * cam.zoom * scale,
+    boxW: wrapper.clientWidth,
+    boxH: wrapper.clientHeight,
+    spaceBelow,
+  };
 }
 
 function zoomAtPoint(nextZoom: number, focalCanvasX: number, focalCanvasY: number) {
@@ -341,8 +386,13 @@ const bossBar = computed(
       </div>
     </div>
 
-    <div class="flex-1 min-h-0 flex items-center justify-center p-1.5 sm:p-2.5 overflow-hidden">
-      <div class="relative max-w-full max-h-full aspect-[24/16] w-full flex items-center justify-center">
+    <!-- Top-aligned on purpose: the dock below changes height between phases, and a
+         centred board would jump under the player's finger when it does. -->
+    <div class="flex-1 min-h-0 flex items-start justify-center p-1.5 sm:p-2.5 overflow-hidden">
+      <div
+        ref="wrapperRef"
+        class="relative max-w-full max-h-full aspect-[24/16] w-full flex items-center justify-center"
+      >
         <canvas
           ref="canvasRef"
           :width="CANVAS_WIDTH"
@@ -359,6 +409,7 @@ const bossBar = computed(
           @click="handleClick"
           @contextmenu.prevent="handleContextMenu"
         />
+        <slot name="overlay" :tile-rect="tileRect" />
         <div
           v-if="zoomPct > 100"
           class="pointer-events-none absolute bottom-2 right-2 px-2 py-1 rounded bg-[#0F172A]/85 border border-[#324054] font-mono text-[10px] text-slate-300"
