@@ -263,11 +263,16 @@ export const BOARD_THEMES: Record<BoardThemeId, BoardThemeDefinition> = {
 };
 
 // --- Wave specials -------------------------------------------------------
-/** Rally waves: each kill makes every remaining creep of the wave this much tougher (compounding). */
-export const RALLY_TOUGHNESS_PER_KILL = 0.03;
+/**
+ * Rally waves: each kill makes every remaining creep of the wave this much tougher.
+ * The bonus adds up (it does not compound) and stops at RALLY_MAX_BONUS, so big
+ * swarm waves are not punished far harder than small ones.
+ */
+export const RALLY_TOUGHNESS_PER_KILL = 0.02;
+export const RALLY_MAX_BONUS = 0.4;
 /** Escort heroes: health and bounty multiplier versus a normal creep of the wave. */
-export const HERO_HP_MULT = 4;
-export const HERO_BOUNTY_MULT = 4;
+export const HERO_HP_MULT = 2.5;
+export const HERO_BOUNTY_MULT = 3;
 /** Lives lost when a hero reaches the exit (normal 1, boss 3). */
 export const HERO_LIVES_COST = 2;
 /** While the vanguard lives, the rest of its wave moves this much faster. */
@@ -277,12 +282,14 @@ export const WARDEN_REGEN_PER_SEC = 0.03;
 
 /**
  * Which special a wave carries. Boss waves (every 5th) have none; otherwise every
- * 3rd wave is a rally wave, and from wave 4 the waves in between get an escort.
+ * 3rd wave is a rally wave, and from wave 4 the waves in between get an escort,
+ * except armored waves: they are the tankiest type already, so heroes never stack on them.
  */
 export function getWaveModifier(wave: number): WaveModifier | undefined {
   if (wave % 5 === 0) return undefined;
   if (wave % 3 === 0) return 'rally';
-  if (wave >= 4 && wave % 3 === 1) return 'escort';
+  const isArmoredWave = (wave - 1) % 5 === 2;
+  if (wave >= 4 && wave % 3 === 1 && !isArmoredWave) return 'escort';
   return undefined;
 }
 

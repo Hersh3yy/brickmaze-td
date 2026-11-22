@@ -1,6 +1,7 @@
 import type { WorldDefinition, WorldSprites } from './types';
 import {
   HERO_LIVES_COST,
+  RALLY_MAX_BONUS,
   RALLY_TOUGHNESS_PER_KILL,
   VANGUARD_SPEED_BONUS,
   WARDEN_REGEN_PER_SEC,
@@ -477,7 +478,7 @@ export const brickLab: WorldDefinition = {
     modifiers: {
       rally: {
         label: 'Rally',
-        detail: `Every kill makes the rest of the wave ${Math.round(RALLY_TOUGHNESS_PER_KILL * 100)}% tougher. Kill them together.`,
+        detail: `Every kill makes the rest of the wave ${Math.round(RALLY_TOUGHNESS_PER_KILL * 100)}% tougher, up to +${Math.round(RALLY_MAX_BONUS * 100)}%. Kill them together.`,
       },
       escort: {
         label: 'Escort',

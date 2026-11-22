@@ -11,6 +11,7 @@ import {
   HERO_HP_MULT,
   HERO_LIVES_COST,
   MAX_WAVES,
+  RALLY_MAX_BONUS,
   RALLY_TOUGHNESS_PER_KILL,
   TILE_SIZE,
   TOWER_DEFS,
@@ -241,11 +242,14 @@ export function stepSimulation(
     sim.floatingTexts.push({ id: nextUid('ft'), x, y, text, color, ttl: 0.72, maxTtl: 0.72 });
   };
 
-  // Rally waves: every kill makes the rest of the wave tougher, including creeps not yet spawned.
+  // Rally waves: every kill makes the rest of the wave tougher, including creeps not yet
+  // spawned. The bonus adds up per kill and is capped, so rallyMult runs 1 → 1 + max.
   const onCreepKilled = (dead: Creep) => {
     if (waveDef.modifier !== 'rally') return;
-    const mult = 1 + RALLY_TOUGHNESS_PER_KILL;
-    sim.rallyMult *= mult;
+    const next = Math.min(1 + RALLY_MAX_BONUS, sim.rallyMult + RALLY_TOUGHNESS_PER_KILL);
+    if (next <= sim.rallyMult) return;
+    const mult = next / sim.rallyMult;
+    sim.rallyMult = next;
     for (const c of sim.creeps) {
       if (c === dead || c.hp <= 0) continue;
       c.hp *= mult;

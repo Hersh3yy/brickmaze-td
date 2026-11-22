@@ -133,6 +133,9 @@ describe('wave specials', () => {
     expect(getWaveDefinition(5).modifier).toBeUndefined()
     expect(getWaveDefinition(15).modifier).toBeUndefined()
     expect(getWaveDefinition(2).modifier).toBeUndefined()
+    // Armored waves (3, 8, 13, 18, 23, 28) never get heroes on top.
+    expect(getWaveDefinition(13).modifier).toBeUndefined()
+    expect(getWaveDefinition(28).modifier).toBeUndefined()
   })
 
   function startWave(wave: number) {
@@ -151,17 +154,17 @@ describe('wave specials', () => {
     return { sim, world, total }
   }
 
-  it('escort waves add a vanguard first and a warden last, with 4x health', () => {
+  it('escort waves add a vanguard first and a warden last, with 2.5x health', () => {
     const def = getWaveDefinition(4)
     const { sim, total } = startWave(4)
     expect(total).toBe(def.count + 2)
     const spawnedInOrder = [...sim.creeps].sort((a, b) => b.pathIndex - a.pathIndex)
     expect(spawnedInOrder[0]!.hero).toBe('vanguard')
     expect(spawnedInOrder.at(-1)!.hero).toBe('warden')
-    expect(spawnedInOrder[0]!.maxHp).toBe(def.hp * 4)
+    expect(spawnedInOrder[0]!.maxHp).toBe(def.hp * 2.5)
   })
 
-  it('rally waves make the rest of the wave 3% tougher per kill', () => {
+  it('rally waves make the rest of the wave 2% tougher per kill, capped at +40%', () => {
     const { sim, world } = startWave(3)
     const [victim, ...rest] = sim.creeps
     const before = rest.map((c) => c.maxHp)
@@ -170,7 +173,17 @@ describe('wave specials', () => {
     victim!.poisonTimer = 1
     victim!.poisonDps = 100
     stepSimulation(sim, world, 1 / 60, 99999, {}, mulberry32(4))
-    rest.forEach((c, i) => expect(c.maxHp).toBeCloseTo(before[i]! * 1.03, 5))
-    expect(sim.rallyMult).toBeCloseTo(1.03, 5)
+    rest.forEach((c, i) => expect(c.maxHp).toBeCloseTo(before[i]! * 1.02, 5))
+    expect(sim.rallyMult).toBeCloseTo(1.02, 5)
+
+    // Kill 30 more: the bonus adds up and stops at +40%.
+    for (let k = 0; k < 30 && sim.creeps.length > 1; k++) {
+      const c = sim.creeps[0]!
+      c.hp = 0.01
+      c.poisonTimer = 1
+      c.poisonDps = 100
+      stepSimulation(sim, world, 1 / 60, 99999 + k, {}, mulberry32(5 + k))
+    }
+    expect(sim.rallyMult).toBeLessThanOrEqual(1.4 + 1e-9)
   })
 })

@@ -2,6 +2,7 @@ import { lightsOutVoxels } from './lightsOutVoxels';
 import type { PaletteMap, SpriteGrid, WorldDefinition, WorldSprites } from './types';
 import {
   HERO_LIVES_COST,
+  RALLY_MAX_BONUS,
   RALLY_TOUGHNESS_PER_KILL,
   VANGUARD_SPEED_BONUS,
   WARDEN_REGEN_PER_SEC,
@@ -523,7 +524,7 @@ export const lightsOut: WorldDefinition = {
     modifiers: {
       rally: {
         label: 'Grudge',
-        detail: `Every fallen mouse makes the rest ${Math.round(RALLY_TOUGHNESS_PER_KILL * 100)}% angrier and tougher. Take them out together.`,
+        detail: `Every fallen mouse makes the rest ${Math.round(RALLY_TOUGHNESS_PER_KILL * 100)}% angrier and tougher, up to +${Math.round(RALLY_MAX_BONUS * 100)}%. Take them out together.`,
       },
       escort: {
         label: 'Escort',
