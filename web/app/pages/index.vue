@@ -2,7 +2,6 @@
 import { Lock, Play, User } from '@lucide/vue';
 import {
   BOARD_THEMES,
-  BRICK_COLORS,
   BRICK_COLOR_LIST,
   DIFFICULTY_DEFS,
   DIFFICULTY_LIST,
@@ -11,6 +10,7 @@ import {
   getXpForNextLevel,
 } from '~/game/domain/constants';
 import type { BoardThemeId, DifficultyId, MapLayoutId } from '~/game/domain/types';
+import { WORLDS, WORLD_LIST, setWorld, type WorldId } from '~/game/worlds';
 
 // Lobby art lives in public/images. Until those files exist the onError fallbacks show.
 const HERO_IMAGE = '/images/brickmaze_hero.jpg';
@@ -37,6 +37,25 @@ const activeDiff = computed(() => DIFFICULTY_DEFS[selectedDifficulty.value]);
 
 const mapIds = Object.keys(MAP_LAYOUTS) as MapLayoutId[];
 const themeIds = Object.keys(BOARD_THEMES) as BoardThemeId[];
+
+const world = useWorld();
+const towerNames = computed(() => {
+  const t = world.value.text.towers;
+  return [t.repeater.name, t.cannon.name, t.pulse.name, t.sniper.name];
+});
+const elementNames = computed(() => {
+  const e = world.value.text.elements;
+  return [e.yellow.elementName, e.red.elementName, e.green.elementName];
+});
+
+function worldButtonClass(id: WorldId): string {
+  return [
+    'w-full text-left px-3.5 py-2.5 min-h-[44px] rounded-md border transition-colors cursor-pointer',
+    world.value.id === id
+      ? 'bg-[#283548] border-amber-400 text-slate-100'
+      : 'bg-[#171E28] border-[#2C384B] text-slate-300 hover:bg-[#1F2937]',
+  ].join(' ');
+}
 
 function difficultyButtonClass(diffId: DifficultyId): string {
   const active = selectedDifficulty.value === diffId;
@@ -159,7 +178,7 @@ onMounted(() => {
               Weapons on Top. Elemental Bricks Underneath.
             </h1>
             <p class="text-xs sm:text-sm text-slate-200 max-w-xl leading-relaxed">
-              Draft 4 elemental bricks each turn to build your maze. Mount Repeaters, Cannons, Pulses, or Rail Snipers—and watch the brick color transform their ammo into Lightning, Fire, or Venom.
+              Draft 4 elemental bricks each turn to build your maze. Mount a {{ towerNames.join(', ') }}—and watch the brick color turn their ammo into {{ elementNames[0] }}, {{ elementNames[1] }}, or {{ elementNames[2] }}.
             </p>
           </div>
         </div>
@@ -225,17 +244,36 @@ onMounted(() => {
                 @click="selectedMap = id"
               >
                 <div class="flex items-center justify-between gap-2">
-                  <span class="text-sm font-semibold">{{ MAP_LAYOUTS[id].name }}</span>
+                  <span class="text-sm font-semibold">{{ world.text.maps[id].name }}</span>
                   <span class="font-mono text-[11px] text-amber-300">{{ MAP_LAYOUTS[id].difficulty }}</span>
                 </div>
-                <p class="text-xs text-slate-400 mt-0.5 leading-snug">{{ MAP_LAYOUTS[id].description }}</p>
+                <p class="text-xs text-slate-400 mt-0.5 leading-snug">{{ world.text.maps[id].description }}</p>
               </button>
             </div>
           </div>
 
           <div class="space-y-2 pt-2 border-t border-[#2C384B]">
             <div class="flex items-center justify-between">
-              <h2 class="text-sm font-bold text-slate-100">03. Board Theme</h2>
+              <h2 class="text-sm font-bold text-slate-100">03. World</h2>
+              <span class="text-xs text-slate-400">Cosmetic · same rules</span>
+            </div>
+            <div class="space-y-2">
+              <button
+                v-for="id in WORLD_LIST"
+                :key="id"
+                type="button"
+                :class="worldButtonClass(id)"
+                @click="setWorld(id)"
+              >
+                <span class="block text-sm font-semibold">{{ WORLDS[id].name }}</span>
+                <span class="block text-xs text-slate-400 mt-0.5 leading-snug">{{ WORLDS[id].tagline }}</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="space-y-2 pt-2 border-t border-[#2C384B]">
+            <div class="flex items-center justify-between">
+              <h2 class="text-sm font-bold text-slate-100">04. Board</h2>
               <span class="text-xs text-slate-400">Cosmetic</span>
             </div>
             <div class="grid grid-cols-2 gap-2">
@@ -250,9 +288,9 @@ onMounted(() => {
                 <span class="flex items-center gap-2 truncate">
                   <span
                     class="w-3 h-3 rounded-[2px] border border-white/20 shrink-0"
-                    :style="{ backgroundColor: BOARD_THEMES[themeId].cellFill }"
+                    :style="{ backgroundColor: world.boards[themeId].cellFill }"
                   />
-                  <span class="truncate">{{ BOARD_THEMES[themeId].name }}</span>
+                  <span class="truncate">{{ world.boards[themeId].name }}</span>
                 </span>
                 <span
                   v-if="!isThemeUnlocked(themeId)"
@@ -280,7 +318,7 @@ onMounted(() => {
         <div class="space-y-1.5">
           <h3 class="text-sm font-bold text-slate-100">01. Towers = Weapon Types</h3>
           <p class="text-xs text-slate-400 leading-relaxed">
-            Repeater (rapid bolts), Cannon (arcing blast), Pulse (360° shockwave), and Rail Sniper (pierces armor). Move any weapon freely between waves.
+            {{ towerNames[0] }} (rapid fire), {{ towerNames[1] }} (arcing blast), {{ towerNames[2] }} (360° shockwave), and {{ towerNames[3] }} (pierces armor). Move any weapon freely between waves.
           </p>
         </div>
         <div class="space-y-1.5">
@@ -292,7 +330,7 @@ onMounted(() => {
               class="inline-flex items-center gap-2 text-xs text-slate-300 mr-4"
             >
               <BrickColorGlyph :color="c" size="sm" />
-              <span>{{ BRICK_COLORS[c].bonusShort }}</span>
+              <span>{{ world.text.elements[c].bonusShort }}</span>
             </div>
           </div>
         </div>

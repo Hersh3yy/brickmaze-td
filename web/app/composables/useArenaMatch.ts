@@ -30,6 +30,7 @@ import {
 } from '~/game/domain/simulation';
 import type { SimEvents, SimWorld } from '~/game/domain/simulation';
 import { computeBoardSynergyLinks, findFusionOptionsForBrick } from '~/game/domain/synergy';
+import { waveTitle } from '~/game/worlds';
 import type {
   BrickColor,
   Coord,
@@ -218,7 +219,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
   const bossPreview = computed(() => {
     if (wave.value % 5 !== 0) return null;
     const def = getWaveDefinition(wave.value, difficulty);
-    return { name: def.name, hp: def.hp, count: def.count };
+    return { name: waveTitle(def), hp: def.hp, count: def.count };
   });
 
   // --- Simulation + render frame (plain objects, mutated in place every frame) ---

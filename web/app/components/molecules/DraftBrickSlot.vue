@@ -14,6 +14,7 @@ const props = defineProps<{
 const emit = defineEmits<{ pick: [] }>();
 
 const meta = computed(() => BRICK_COLORS[props.color]);
+const world = useWorld();
 const isInteractive = computed(() => props.state === 'pickable');
 
 const baseClass = computed(() =>
@@ -59,7 +60,7 @@ const roleHint = computed(() =>
     <div class="min-w-0 flex-1">
       <div class="flex items-center justify-between gap-2">
         <span class="text-xs font-semibold text-slate-100 whitespace-nowrap">
-          {{ meta.elementName }}
+          {{ world.text.elements[color].elementName }}
         </span>
         <span class="font-mono text-[10px] text-slate-400 whitespace-nowrap">{{ stateLabel }}</span>
       </div>

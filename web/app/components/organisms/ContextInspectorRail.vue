@@ -1,17 +1,16 @@
 <script setup lang="ts">
 import { ArrowUpCircle, Eraser, Lock, Move, Skull, Trash2, X } from '@lucide/vue';
 import {
-  BRICK_COLORS,
   BRICK_COLOR_LIST,
   CLEAR_GRAY_BRICK_COST,
   DIFFICULTY_DEFS,
   SYNERGY_CATALOG,
   TOWER_DEFS,
-  WAVE_MODIFIER_INFO,
   getWaveDefinition,
 } from '~/game/domain/constants';
 import { tileAppliesDebuff } from '~/game/domain/simulation';
 import { computeTileModifiers } from '~/game/domain/synergy';
+import { waveTitle } from '~/game/worlds';
 import type {
   BrickColor,
   Coord,
@@ -49,10 +48,14 @@ const CLOSE_BTN_CLASS =
   'lg:hidden p-1.5 -mr-1.5 rounded-md text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer shrink-0';
 
 const AMMO_HINT: Record<BrickColor, string> = {
-  yellow: 'Speed + Lightning Chain',
-  red: 'Bonus Damage + Fire Splash',
-  green: 'Slow + Corrosive DoT',
+  yellow: 'Speed + Chain',
+  red: 'Bonus Damage + Splash',
+  green: 'Slow + Damage over time',
 };
+
+const world = useWorld();
+/** This World's name for an element, e.g. "Lightning" or "Spark". */
+const el = (c: BrickColor) => world.value.text.elements[c].elementName;
 
 const isCombat = computed(() => props.phase === 'COMBAT');
 const currentWaveDef = computed(() => getWaveDefinition(props.wave, props.difficulty));
@@ -97,22 +100,22 @@ const cellView = computed(() => {
   const isGray = cell.kind === 'GRAY_WALL';
   const mods = computeTileModifiers(props.grid, cell.x, cell.y);
 
-  let title = 'Gray Maze Wall';
+  let title = world.value.text.wall;
   if (cell.kind === 'MASTER_BRICK') title = `Master: ${mods.ammoLabel}`;
   else if (cell.kind === 'ACTIVE_BRICK' && cell.color) {
-    title = `${BRICK_COLORS[cell.color].elementName} Brick`;
+    title = `${el(cell.color)} Brick`;
   }
 
   let effectText = '';
   if (cell.color) {
     if (!mods.isDoubleElement) {
-      effectText = BRICK_COLORS[cell.color].bonusDetail;
+      effectText = world.value.text.elements[cell.color].bonusDetail;
     } else if (cell.color === 'green') {
-      effectText = `Double Venom (×2): ${Math.round(mods.slowFactor * 100)}% slow for ${mods.slowDuration.toFixed(1)}s + ${Math.round(mods.poisonDpsRatio * 100)}% corrosive DoT/s (ignores armor).`;
+      effectText = `Double ${el('green')} (×2): ${Math.round(mods.slowFactor * 100)}% slow for ${mods.slowDuration.toFixed(1)}s + ${Math.round(mods.poisonDpsRatio * 100)}% corrosive DoT/s (ignores armor).`;
     } else if (cell.color === 'red') {
-      effectText = `Double Fire (×2): +${Math.round((mods.damageMult - 1) * 100)}% damage, +${mods.extraSplashRadius}px splash & ${Math.round(mods.burnDpsRatio * 100)}% burn/s.`;
+      effectText = `Double ${el('red')} (×2): +${Math.round((mods.damageMult - 1) * 100)}% damage, +${mods.extraSplashRadius}px splash & ${Math.round(mods.burnDpsRatio * 100)}% burn/s.`;
     } else {
-      effectText = `Double Lightning (×2): +${Math.round((mods.fireRateMult - 1) * 100)}% attack speed & ${mods.chainCount} lightning chains.`;
+      effectText = `Double ${el('yellow')} (×2): +${Math.round((mods.fireRateMult - 1) * 100)}% attack speed & ${mods.chainCount} lightning chains.`;
     }
   }
 
@@ -139,7 +142,7 @@ const isPreBoss = computed(() => props.wave % 5 === 4);
   <aside v-if="towerView" :class="[ASIDE_CLASS, 'space-y-4']">
     <div class="pb-3 border-b border-[#2D3A4D]">
       <div class="flex items-center justify-between gap-2">
-        <h3 class="text-base font-bold text-slate-100">{{ towerView.def.name }}</h3>
+        <h3 class="text-base font-bold text-slate-100">{{ world.text.towers[towerView.tower.type].name }}</h3>
         <div class="flex items-center gap-2">
           <span class="font-mono text-xs text-amber-300">Tier {{ towerView.tower.level }}/3</span>
           <button type="button" aria-label="Close panel" :class="CLOSE_BTN_CLASS" @click="emit('closeMobile')">
@@ -345,21 +348,21 @@ const isPreBoss = computed(() => props.wave % 5 === 4);
         </button>
       </div>
       <div class="text-sm font-bold text-slate-100">
-        Wave {{ currentWaveDef.wave }} · {{ currentWaveDef.name }}
+        Wave {{ currentWaveDef.wave }} · {{ waveTitle(currentWaveDef, world) }}
       </div>
       <div class="font-mono text-xs text-slate-300 tabular-nums">
         {{ currentWaveDef.count }}x{{ currentWaveDef.modifier === 'escort' ? ' + 2 heroes' : '' }} ·
         {{ currentWaveDef.hp.toLocaleString() }} HP · {{ Math.round(currentWaveDef.armor * 100) }}% Armor
       </div>
       <p v-if="currentWaveDef.modifier" class="text-[11px] text-sky-200 leading-snug pt-0.5">
-        <span class="font-semibold text-sky-300">{{ WAVE_MODIFIER_INFO[currentWaveDef.modifier].label }}:</span>
-        {{ WAVE_MODIFIER_INFO[currentWaveDef.modifier].detail }}
+        <span class="font-semibold text-sky-300">{{ world.text.modifiers[currentWaveDef.modifier].label }}:</span>
+        {{ world.text.modifiers[currentWaveDef.modifier].detail }}
       </p>
       <p v-if="currentWaveDef.armor > 0" class="text-[11px] text-slate-400 leading-snug">
-        Armor only blocks direct hits. Lightning chains, splash, poison and burn go straight through.
+        Armor only blocks direct hits. {{ el('yellow') }} chains, splash, {{ el('green').toLowerCase() }} and burn go straight through.
       </p>
       <p v-if="isBossWave" class="text-[11px] text-rose-200/90 leading-snug pt-0.5">
-        Bosses cost 3 lives if leaked. Fortify with Rail Snipers, Fire bursts, or Venom slow!
+        Bosses cost 3 lives if leaked. Fortify with {{ world.text.towers.sniper.name }}s, {{ el('red') }} bursts, or {{ el('green') }} slow!
       </p>
       <p v-if="isPreBoss" class="text-[11px] text-amber-300/90 pt-0.5">
         Heads up: Boss fight arrives on Wave {{ wave + 1 }}.
@@ -372,7 +375,7 @@ const isPreBoss = computed(() => props.wave % 5 === 4);
         <div v-for="c in BRICK_COLOR_LIST" :key="c" class="flex items-start gap-2 text-xs">
           <BrickColorGlyph :color="c" size="sm" />
           <div class="min-w-0">
-            <div class="font-semibold text-slate-100">{{ BRICK_COLORS[c].elementName }}</div>
+            <div class="font-semibold text-slate-100">{{ el(c) }}</div>
             <div class="text-[11px] text-slate-400 leading-snug">{{ AMMO_HINT[c] }}</div>
           </div>
         </div>

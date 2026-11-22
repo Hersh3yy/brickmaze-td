@@ -1,4 +1,5 @@
-import { BRICK_COLORS, GRID_COLS, GRID_ROWS, SYNERGY_CATALOG } from './constants';
+import { GRID_COLS, GRID_ROWS, SYNERGY_CATALOG } from './constants';
+import { activeWorld } from '../worlds';
 import type {
   BrickColor,
   Coord,
@@ -12,6 +13,14 @@ import type {
 
 function pairKey(a: BrickColor, b: BrickColor): string {
   return a < b ? `${a}:${b}` : `${b}:${a}`;
+}
+
+/**
+ * The active World's name for an element. Labels built here (ammo names, fusion options)
+ * are display text, so they follow the World the match was started in.
+ */
+function elementName(color: BrickColor): string {
+  return activeWorld().text.elements[color].elementName;
 }
 
 export function matchColorPairSynergy(a: BrickColor, b: BrickColor): SynergyInfo | null {
@@ -129,12 +138,12 @@ export function computeTileModifiers(
   mod.isDoubleElement = isDouble;
 
   if (isDouble) {
-    mod.ammoLabel = `Double ${BRICK_COLORS[ownColors[0]].elementName} (×2)`;
+    mod.ammoLabel = `Double ${elementName(ownColors[0])} (×2)`;
   } else if (ownColors.length > 1 && ownColors[1] !== ownColors[0]) {
     mod.secondaryElement = ownColors[1];
-    mod.ammoLabel = `${BRICK_COLORS[ownColors[0]].elementName} + ${BRICK_COLORS[ownColors[1]].elementName}`;
+    mod.ammoLabel = `${elementName(ownColors[0])} + ${elementName(ownColors[1])}`;
   } else {
-    mod.ammoLabel = `${BRICK_COLORS[ownColors[0]].elementName} Ammo`;
+    mod.ammoLabel = `${elementName(ownColors[0])} Ammo`;
   }
 
   // Apply base elemental properties (additive slow & DoT so doubles and clusters genuinely scale!)
@@ -296,23 +305,24 @@ export function findFusionOptionsForBrick(
     if (!syn) return;
     seenPartnerColors.add(partnerColor);
 
-    const elA = BRICK_COLORS[anchorColor].elementName;
-    const elB = BRICK_COLORS[partnerColor].elementName;
+    const elA = elementName(anchorColor);
+    const elB = elementName(partnerColor);
+    const synText = activeWorld().text.synergies[syn.id];
     const isTwin = anchorColor === partnerColor;
 
     const twinDetail =
       anchorColor === 'green'
         ? '56% Slow + 2× Corrosive DoT'
         : anchorColor === 'red'
-          ? '+85% DMG + Huge Fire Splash & Burn'
-          : '+75% Speed + 4 Lightning Chains';
+          ? `+85% DMG + Huge ${elA} Splash & Burn`
+          : `+75% Speed + 4 ${elA} Chains`;
 
     options.push({
       id: `${anchorIndex}:${partnerIndex}:${syn.id}`,
-      name: isTwin ? `Double ${elA} (×2)` : `${syn.name} Brick`,
+      name: isTwin ? `Double ${elA} (×2)` : `${synText.name} Brick`,
       description: isTwin
         ? `Fuse two ${elA} bricks: ${twinDetail}`
-        : `Fuse ${elA} + ${elB}: ${syn.shortEffect}`,
+        : `Fuse ${elA} + ${elB}: ${synText.shortEffect}`,
       indices: [anchorIndex, partnerIndex],
       colors: [anchorColor, partnerColor],
       anchorIndex,

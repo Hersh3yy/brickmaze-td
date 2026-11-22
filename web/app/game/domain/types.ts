@@ -186,11 +186,10 @@ export interface FloatingText {
   maxTtl: number;
 }
 
+/** A colour-pair synergy. Its name and effect text live in the World (game/worlds). */
 export interface SynergyInfo {
-  id: string;
-  name: string;
+  id: 'plasma' | 'wildfire' | 'static_venom' | 'overcharge';
   colors: [BrickColor, BrickColor];
-  shortEffect: string;
 }
 
 export interface SynergyLink {
@@ -233,9 +232,9 @@ export interface TurnFusionOption {
   anchorIndex: number;
 }
 
+/** One wave's rules. Its display name comes from the World: see waveTitle() in game/worlds. */
 export interface WaveDefinition {
   wave: number;
-  name: string;
   trait: CreepTrait;
   count: number;
   hp: number;

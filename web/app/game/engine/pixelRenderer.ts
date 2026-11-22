@@ -8,7 +8,6 @@ import {
   TILE_SIZE,
   TOWER_DEFS,
 } from '../domain/constants';
-import type { BoardThemeDefinition } from '../domain/constants';
 import type {
   BeamEffect,
   BoardThemeId,
@@ -28,6 +27,8 @@ import type {
   TowerType,
 } from '../domain/types';
 import { computeTileModifiers } from '../domain/synergy';
+import { activeWorld } from '../worlds';
+import type { BoardLook } from '../worlds/types';
 import { spriteAtlas } from './spriteAtlas';
 
 export interface CameraView {
@@ -105,6 +106,14 @@ const COLOR_ID = (c: BrickColor | undefined): number =>
 const THEME_IDS = Object.keys(BOARD_THEMES) as BoardThemeId[];
 
 const mix = (h: number, v: number): number => Math.imul(h ^ (v | 0), 0x01000193) >>> 0;
+const hashText = (text: string): number => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = mix(h, text.charCodeAt(i));
+  return h;
+};
+
+/** Last horizontal direction each creep walked, so side-view sprites keep facing it on vertical legs. */
+const creepFacesLeft = new WeakMap<Creep, boolean>();
 
 const occupied = new Uint8Array(GRID_COLS * GRID_ROWS);
 
@@ -229,7 +238,8 @@ function paintBoard(
   target: CanvasRenderingContext2D,
   base: DOMMatrix | undefined,
   frame: RenderFrameInput,
-  theme: BoardThemeDefinition
+  theme: BoardLook,
+  brickStyle: 'studded' | 'block'
 ) {
   target.setTransform(1, 0, 0, 1, 0, 0);
   target.clearRect(0, 0, target.canvas.width, target.canvas.height);
@@ -242,19 +252,8 @@ function paintBoard(
   target.translate(frame.camera.panX, frame.camera.panY);
   target.scale(frame.camera.zoom, frame.camera.zoom);
 
-  // Flat checkerboard with hairline joints. The old four stud dots per cell are gone:
-  // they made the empty floor as busy as the maze.
-  target.strokeStyle = theme.gridLine;
-  target.lineWidth = 1;
-  for (let y = 0; y < GRID_ROWS; y++) {
-    for (let x = 0; x < GRID_COLS; x++) {
-      const px = x * TILE_SIZE;
-      const py = y * TILE_SIZE;
-      target.fillStyle = (x + y) % 2 === 0 ? theme.cellFill : theme.cellAlt;
-      target.fillRect(px, py, TILE_SIZE, TILE_SIZE);
-      target.strokeRect(px + 0.5, py + 0.5, TILE_SIZE - 1, TILE_SIZE - 1);
-    }
-  }
+  if (theme.floor === 'planks') paintPlankFloor(target, theme);
+  else paintCheckerFloor(target, theme);
 
   for (let y = 0; y < GRID_ROWS; y++) {
     for (let x = 0; x < GRID_COLS; x++) {
@@ -265,12 +264,16 @@ function paintBoard(
 
       switch (cell.kind) {
         case 'GRAY_WALL':
-          drawBrickTile(target, px, py, theme.grayWall, theme.grayWallLight, theme.grayWallDark);
+          drawBrickTile(target, px, py, theme.grayWall, theme.grayWallLight, theme.grayWallDark, {
+            style: brickStyle,
+            grain: brickStyle === 'block',
+          });
           break;
         case 'TURN_DRAFT': {
           const color = cell.color ?? 'yellow';
           const meta = BRICK_COLORS[color];
           drawBrickTile(target, px, py, meta.hex, meta.lightHex, meta.darkHex, {
+            style: brickStyle,
             isActiveGlow: true,
             emblem: spriteAtlas.getEmblem(color),
           });
@@ -280,6 +283,7 @@ function paintBoard(
           const color = cell.color ?? 'yellow';
           const meta = BRICK_COLORS[color];
           drawBrickTile(target, px, py, meta.hex, meta.lightHex, meta.darkHex, {
+            style: brickStyle,
             isActiveGlow: true,
             emblem: hasTower ? undefined : spriteAtlas.getEmblem(color),
           });
@@ -290,6 +294,7 @@ function paintBoard(
           const metaB = BRICK_COLORS[cell.secondaryColor ?? cell.color ?? 'yellow'];
           const isDouble = !cell.secondaryColor || cell.secondaryColor === cell.color;
           drawBrickTile(target, px, py, metaA.hex, metaA.lightHex, metaA.darkHex, {
+            style: brickStyle,
             secondaryBodyHex: isDouble ? undefined : metaB.hex,
             secondaryLightHex: isDouble ? undefined : metaB.lightHex,
             secondaryDarkHex: isDouble ? undefined : metaB.darkHex,
@@ -305,6 +310,46 @@ function paintBoard(
       }
     }
   }
+}
+
+/** Flat checkerboard with hairline joints (no stud dots: they made the empty floor busy). */
+function paintCheckerFloor(target: CanvasRenderingContext2D, theme: BoardLook) {
+  target.strokeStyle = theme.gridLine;
+  target.lineWidth = 1;
+  for (let y = 0; y < GRID_ROWS; y++) {
+    for (let x = 0; x < GRID_COLS; x++) {
+      const px = x * TILE_SIZE;
+      const py = y * TILE_SIZE;
+      target.fillStyle = (x + y) % 2 === 0 ? theme.cellFill : theme.cellAlt;
+      target.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+      target.strokeRect(px + 0.5, py + 0.5, TILE_SIZE - 1, TILE_SIZE - 1);
+    }
+  }
+}
+
+/**
+ * Floorboards: one plank row per tile row, alternating shades, with butt joints every
+ * three tiles staggered row to row. Faint cell ticks keep the build grid readable.
+ */
+function paintPlankFloor(target: CanvasRenderingContext2D, theme: BoardLook) {
+  for (let y = 0; y < GRID_ROWS; y++) {
+    const py = y * TILE_SIZE;
+    target.fillStyle = y % 2 === 0 ? theme.cellFill : theme.cellAlt;
+    target.fillRect(0, py, CANVAS_WIDTH, TILE_SIZE);
+    target.fillStyle = theme.gridLine;
+    target.fillRect(0, py, CANVAS_WIDTH, 2);
+    for (let x = y % 3; x < GRID_COLS; x += 3) target.fillRect(x * TILE_SIZE, py, 2, TILE_SIZE);
+  }
+  target.globalAlpha = 0.35;
+  target.fillStyle = theme.gridLine;
+  for (let y = 0; y < GRID_ROWS; y++) {
+    for (let x = 1; x < GRID_COLS; x++) {
+      if ((x - (y % 3)) % 3 === 0) continue;
+      target.fillRect(x * TILE_SIZE, y * TILE_SIZE + 2, 1, 4);
+      target.fillRect(x * TILE_SIZE, (y + 1) * TILE_SIZE - 4, 1, 4);
+    }
+  }
+  target.globalAlpha = 1;
 }
 
 function drawBrickTile(
@@ -325,6 +370,10 @@ function drawBrickTile(
     glyph?: string;
     /** Pixel element emblem pressed into the brick; replaces the studs when present. */
     emblem?: HTMLCanvasElement;
+    /** 'studded' toy brick (default) or a smooth wooden 'block' with chamfered corners. */
+    style?: 'studded' | 'block';
+    /** Wood grain lines on a plain block (gray walls in block style). */
+    grain?: boolean;
     alpha?: number;
   }
 ) {
@@ -338,14 +387,24 @@ function drawBrickTile(
   const w = s - pad * 2;
   const h = s - pad * 2;
 
+  const isBlock = opts?.style === 'block';
+
   ctx.fillStyle = 'rgba(0, 0, 0, 0.48)';
   ctx.fillRect(x + 2, y + 3, w, h);
 
   ctx.fillStyle = darkHex;
-  ctx.fillRect(x, y, w, h);
+  if (isBlock) {
+    // Chamfered silhouette: corners stepped in by two pixels.
+    ctx.fillRect(x + 2, y, w - 4, h);
+    ctx.fillRect(x, y + 2, w, h - 4);
+    ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+  } else {
+    ctx.fillRect(x, y, w, h);
+  }
 
   ctx.fillStyle = bodyHex;
-  ctx.fillRect(x + 2, y + 2, w - 4, h - 5);
+  // A block shows a thicker bottom lip, which reads as the front face of a raised block.
+  ctx.fillRect(x + 2, y + 2, w - 4, isBlock ? h - 7 : h - 5);
 
   if (opts?.secondaryBodyHex && opts.secondaryDarkHex && opts.secondaryLightHex) {
     ctx.beginPath();
@@ -359,7 +418,18 @@ function drawBrickTile(
 
   ctx.fillStyle = lightHex;
   ctx.fillRect(x + 2, y + 2, w - 4, 2);
-  ctx.fillRect(x + 2, y + 2, 2, h - 5);
+  ctx.fillRect(x + 2, y + 2, 2, isBlock ? h - 7 : h - 5);
+
+  if (opts?.grain) {
+    ctx.fillStyle = darkHex;
+    ctx.globalAlpha = (opts.alpha ?? 1) * 0.5;
+    ctx.fillRect(x + 6, y + 9, w - 14, 1);
+    ctx.fillRect(x + w - 9, y + 10, 3, 1);
+    ctx.fillRect(x + 9, y + 17, w - 14, 1);
+    ctx.fillRect(x + 6, y + 18, 3, 1);
+    ctx.fillRect(x + 13, y + 13, 3, 2);
+    ctx.globalAlpha = opts.alpha ?? 1;
+  }
 
   const studOffsets = [
     { ox: 7, oy: 6, isSec: false },
@@ -373,7 +443,7 @@ function drawBrickTile(
     ctx.drawImage(em, px + Math.round((s - em.width) / 2) + 1, py + Math.round((s - em.height) / 2));
   }
 
-  for (const st of opts?.emblem ? [] : studOffsets) {
+  for (const st of opts?.emblem || isBlock ? [] : studOffsets) {
     const sx = px + st.ox;
     const sy = py + st.oy;
     const useSec = st.isSec && opts?.secondaryBodyHex;
@@ -533,9 +603,20 @@ function drawPixelTower(
   }
 }
 
+/** Side-view creeps face their walking direction; on vertical legs they keep the last one. */
+function creepWalksLeft(creep: Creep): boolean {
+  const target = creep.path[creep.pathIndex];
+  if (target) {
+    const dx = target.x * TILE_SIZE + TILE_SIZE / 2 - creep.x;
+    if (dx < -0.5) creepFacesLeft.set(creep, true);
+    else if (dx > 0.5) creepFacesLeft.set(creep, false);
+  }
+  return creepFacesLeft.get(creep) ?? false;
+}
+
 function drawCreep(ctx: CanvasRenderingContext2D, creep: Creep) {
   const frameIdx: 0 | 1 = Math.floor(creep.animTime * 6) % 2 === 0 ? 0 : 1;
-  const sprite = spriteAtlas.getCreep(creep.trait, frameIdx);
+  const sprite = (creep.hero && spriteAtlas.getHero(creep.hero, frameIdx)) || spriteAtlas.getCreep(creep.trait, frameIdx);
   const drawW = creep.trait === 'boss' ? 30 : creep.hero ? 28 : creep.trait === 'swarm' ? 18 : 24;
   const drawH = Math.round((sprite.height / sprite.width) * drawW);
   const x = Math.round(creep.x);
@@ -569,7 +650,15 @@ function drawCreep(ctx: CanvasRenderingContext2D, creep: Creep) {
   // Blit crisp pixel-art animated creep sprite
   const spriteLeft = Math.round(x - drawW / 2);
   const spriteTop = Math.round(y - drawH / 2);
-  ctx.drawImage(sprite, spriteLeft, spriteTop, drawW, drawH);
+  if (spriteAtlas.creepsFaceSideways() && creepWalksLeft(creep)) {
+    ctx.save();
+    ctx.translate(spriteLeft + drawW, spriteTop);
+    ctx.scale(-1, 1);
+    ctx.drawImage(sprite, 0, 0, drawW, drawH);
+    ctx.restore();
+  } else {
+    ctx.drawImage(sprite, spriteLeft, spriteTop, drawW, drawH);
+  }
 
   // One cue per status: slow = the ground ring above, poison = rising bubbles,
   // burn = flame pip, shred = amber pip. (The green tint, green HP border and ▼ pip that
@@ -692,7 +781,8 @@ function drawStylizedProjectile(ctx: CanvasRenderingContext2D, proj: Projectile)
 
 export function renderArenaFrame(ctx: CanvasRenderingContext2D, frame: RenderFrameInput) {
   ctx.imageSmoothingEnabled = false;
-  const theme = BOARD_THEMES[frame.themeId];
+  const world = activeWorld();
+  const theme = world.boards[frame.themeId];
   updateRenderQuality(frame.nowSec);
   attachFontListener();
 
@@ -710,6 +800,7 @@ export function renderArenaFrame(ctx: CanvasRenderingContext2D, frame: RenderFra
   const cw = ctx.canvas?.width ?? CANVAS_WIDTH;
   const ch = ctx.canvas?.height ?? CANVAS_HEIGHT;
   let v = mix(g, THEME_IDS.indexOf(frame.themeId));
+  v = mix(v, hashText(world.id));
   v = mix(v, Math.round(frame.camera.zoom * 1000));
   v = mix(v, Math.round(frame.camera.panX * 100));
   v = mix(v, Math.round(frame.camera.panY * 100));
@@ -721,7 +812,7 @@ export function renderArenaFrame(ctx: CanvasRenderingContext2D, frame: RenderFra
     if (boardCanvas.height !== ch) boardCanvas.height = ch;
     const bctx = boardCanvas.getContext('2d');
     if (bctx) {
-      paintBoard(bctx, ctx.getTransform?.(), frame, theme);
+      paintBoard(bctx, ctx.getTransform?.(), frame, theme, world.brickStyle);
       boardViewHash = v;
     }
   }
@@ -883,6 +974,7 @@ export function renderArenaFrame(ctx: CanvasRenderingContext2D, frame: RenderFra
       if ((cell.kind === 'OPEN' || isUnoccupiedGray) && frame.previewValid) {
         const meta = BRICK_COLORS[frame.nextDraftColor];
         drawBrickTile(ctx, px, py, meta.hex, meta.lightHex, meta.darkHex, {
+          style: world.brickStyle,
           alpha: 0.78,
           emblem: spriteAtlas.getEmblem(frame.nextDraftColor),
         });

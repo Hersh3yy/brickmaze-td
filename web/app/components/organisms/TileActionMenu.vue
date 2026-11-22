@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Eraser, Sparkles, X } from '@lucide/vue';
-import { BRICK_COLORS, CLEAR_GRAY_BRICK_COST, TOWER_DEFS, TOWER_LIST } from '~/game/domain/constants';
+import { CLEAR_GRAY_BRICK_COST, TOWER_DEFS, TOWER_LIST } from '~/game/domain/constants';
 import type { Coord, TowerType, TurnFusionOption } from '~/game/domain/types';
 import type { TileMenu, TileRect } from '~/composables/useArenaMatch';
 
@@ -108,6 +108,8 @@ const title = computed(() => {
   if (props.menu.kind === 'draft') return 'Keep or fuse here';
   return props.menu.isGray ? 'Gray wall' : 'Brick';
 });
+
+const world = useWorld();
 </script>
 
 <template>
@@ -150,7 +152,7 @@ const title = computed(() => {
         @click="emit('keep')"
       >
         <BrickColorGlyph :color="menu.keepColor" size="sm" />
-        <span class="flex-1 font-medium">Keep {{ BRICK_COLORS[menu.keepColor].elementName }}</span>
+        <span class="flex-1 font-medium">Keep {{ world.text.elements[menu.keepColor].elementName }}</span>
         <span class="font-mono text-[10px] text-slate-500">Enter</span>
       </button>
       <button
@@ -184,12 +186,12 @@ const title = computed(() => {
         role="menuitem"
         :disabled="gold < TOWER_DEFS[type].cost"
         class="flex items-center gap-2 w-full min-h-9 px-2 py-1.5 rounded-md text-left hover:bg-white/8 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-        :title="TOWER_DEFS[type].description"
+        :title="world.text.towers[type].description"
         @click="emit('mount', type)"
       >
         <span class="font-mono text-[10px] text-slate-500 w-3">{{ idx + 1 }}</span>
         <span class="flex-1 min-w-0">
-          <span class="block font-semibold text-slate-100 truncate">{{ TOWER_DEFS[type].name }}</span>
+          <span class="block font-semibold text-slate-100 truncate">{{ world.text.towers[type].name }}</span>
           <span class="block text-[10px] text-slate-400 truncate">{{ TOWER_DEFS[type].shortRole }}</span>
         </span>
         <span

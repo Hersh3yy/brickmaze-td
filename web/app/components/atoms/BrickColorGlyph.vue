@@ -2,6 +2,10 @@
 import { computed } from 'vue';
 import { BRICK_COLORS } from '~/game/domain/constants';
 import type { BrickColor } from '~/game/domain/types';
+import { spriteAtlas } from '~/game/engine/spriteAtlas';
+
+// One data URL per World and colour, so every glyph on screen shares the baked emblem.
+const emblemUrls = new Map<string, string>();
 
 const props = withDefaults(
   defineProps<{
@@ -37,17 +41,28 @@ const glyphStyle = computed(() => ({
     : `inset 2px 2px 0 ${primary.value.lightHex}55, inset -2px -2px 0 rgba(0,0,0,0.35)`,
 }));
 
-const glyphText = computed(() =>
-  isDouble.value ? '×2' : secondary.value ? '★' : primary.value.glyph
-);
+const world = useWorld();
 
-const labelText = computed(() =>
-  isDouble.value
-    ? `Double ${primary.value.elementName} (×2)`
-    : secondary.value
-      ? `${primary.value.elementName} + ${secondary.value.elementName}`
-      : primary.value.elementName
-);
+/** ×2 and ★ stay text; a single colour shows the World's pixel emblem for that element. */
+const glyphText = computed(() => (isDouble.value ? '×2' : secondary.value ? '★' : ''));
+
+const emblemSrc = computed(() => {
+  if (glyphText.value) return '';
+  const key = `${world.value.id}:${props.color}`;
+  let url = emblemUrls.get(key);
+  if (!url) {
+    url = spriteAtlas.getEmblem(props.color).toDataURL();
+    emblemUrls.set(key, url);
+  }
+  return url;
+});
+
+const labelText = computed(() => {
+  const names = world.value.text.elements;
+  const a = names[props.color].elementName;
+  if (isDouble.value) return `Double ${a} (×2)`;
+  return props.secondaryColor ? `${a} + ${names[props.secondaryColor].elementName}` : a;
+});
 </script>
 
 <template>
@@ -60,7 +75,8 @@ const labelText = computed(() =>
         SIZE_MAP[size],
       ]"
     >
-      <span class="drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)]">{{ glyphText }}</span>
+      <span v-if="glyphText" class="drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)]">{{ glyphText }}</span>
+      <img v-else :src="emblemSrc" alt="" class="w-[62%] h-auto [image-rendering:pixelated]" />
     </span>
     <span v-if="showLabel" class="text-xs font-medium text-slate-200 whitespace-nowrap">
       {{ labelText }}

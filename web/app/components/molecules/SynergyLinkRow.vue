@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { SynergyInfo } from '~/game/domain/types';
 
+const world = useWorld();
+
 withDefaults(
   defineProps<{
     synergy: SynergyInfo;
@@ -21,9 +23,9 @@ withDefaults(
     </div>
     <div class="min-w-0 flex-1">
       <div :class="['text-xs font-semibold', active ? 'text-amber-300' : 'text-slate-200']">
-        {{ synergy.name }}
+        {{ world.text.synergies[synergy.id].name }}
       </div>
-      <div class="text-[11px] text-slate-400 leading-snug">{{ synergy.shortEffect }}</div>
+      <div class="text-[11px] text-slate-400 leading-snug">{{ world.text.synergies[synergy.id].shortEffect }}</div>
     </div>
   </div>
 </template>
