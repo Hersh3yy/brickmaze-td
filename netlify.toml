@@ -2,7 +2,9 @@
 [build]
   base = "web"
   command = "npm run generate"
-  publish = ".output/public"
+  # Relative to base. On Netlify, Nuxt picks its "netlify-static" preset and writes the
+  # site to dist/ (locally it writes .output/public and links dist/ to it).
+  publish = "dist"
 
 [build.environment]
   NODE_VERSION = "24"
