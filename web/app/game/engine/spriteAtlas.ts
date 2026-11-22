@@ -347,10 +347,81 @@ const PROJ_PALETTES: Record<BrickColor | 'kinetic', PaletteMap> = {
   green: { o: '#064E3B', G: '#10B981', L: '#A7F3D0', W: '#ECFDF5', D: '#047857' },
 };
 
+// --- 7x8 Element Emblems pressed into colored bricks ---
+// One shape per element (flame, bolt, drop) so bricks read by shape as well as color,
+// which matters for red/green color-blind players. Replaces the old emoji-in-a-box glyph.
+
+const EMBLEM_PATTERNS: Record<BrickColor, string[]> = {
+  red: [
+    '...x...',
+    '...xx..',
+    '..xxx..',
+    '.xxxxx.',
+    '.xx.xxx',
+    'xx...xx',
+    'xx...xx',
+    '.xxxxx.',
+  ],
+  yellow: [
+    '....xx.',
+    '...xx..',
+    '..xx...',
+    '.xxxxx.',
+    '...xx..',
+    '..xx...',
+    '.xx....',
+    '.x.....',
+  ],
+  green: [
+    '...x...',
+    '...x...',
+    '..xxx..',
+    '..xxx..',
+    '.xxxxx.',
+    '.xxxxx.',
+    '.xxxxx.',
+    '..xxx..',
+  ],
+};
+
+function bakeEmblem(rows: string[], face: string, shadow: string, pixelScale = 2): HTMLCanvasElement {
+  const h = rows.length;
+  const w = rows[0].length;
+  const canvas = document.createElement('canvas');
+  canvas.width = (w + 1) * pixelScale;
+  canvas.height = (h + 1) * pixelScale;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+  for (const [color, offset] of [
+    [shadow, 1],
+    [face, 0],
+  ] as const) {
+    ctx.fillStyle = color;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (rows[y][x] === 'x') {
+          ctx.fillRect((x + offset) * pixelScale, (y + offset) * pixelScale, pixelScale, pixelScale);
+        }
+      }
+    }
+  }
+  return canvas;
+}
+
 class PixelSpriteAtlas {
   private turretCache = new Map<string, HTMLCanvasElement>();
   private creepCache = new Map<string, [HTMLCanvasElement, HTMLCanvasElement]>();
   private projCache = new Map<string, HTMLCanvasElement>();
+  private emblemCache = new Map<BrickColor, HTMLCanvasElement>();
+
+  public getEmblem(color: BrickColor): HTMLCanvasElement {
+    const existing = this.emblemCache.get(color);
+    if (existing) return existing;
+    const pal = ELEMENT_PALETTES[color];
+    const sprite = bakeEmblem(EMBLEM_PATTERNS[color], pal.l, pal.d, 2);
+    this.emblemCache.set(color, sprite);
+    return sprite;
+  }
 
   public getTurret(type: TowerType, element: BrickColor | 'kinetic'): HTMLCanvasElement {
     const key = `${type}:${element}`;

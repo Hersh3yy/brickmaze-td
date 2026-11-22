@@ -8,10 +8,12 @@ import {
   TILE_SIZE,
   TOWER_DEFS,
 } from '../domain/constants';
+import type { BoardThemeDefinition } from '../domain/constants';
 import type {
   BeamEffect,
   BoardThemeId,
   BrickColor,
+  CellKind,
   Coord,
   Creep,
   FloatingText,
@@ -64,6 +66,247 @@ export function getElementAccent(el: BrickColor | 'kinetic'): string {
   return BRICK_COLORS[el].hex;
 }
 
+// ---------------------------------------------------------------------------
+// Frame budget helpers
+//
+// The floor and bricks only change when a brick, a tower position, the theme or the
+// camera changes, yet they used to cost ~5,000 fillRects every frame (about two thirds
+// of the frame). They are now painted once into an offscreen canvas and blitted. The
+// renderer notices changes itself by hashing the grid, so callers need no signal.
+// ---------------------------------------------------------------------------
+
+/**
+ * Render quality. `mode` can be set by a settings UI later; in 'auto' the renderer drops
+ * to low quality when the measured frame interval stays slow, and climbs back when it
+ * stays fast. Low quality draws fewer particles, shorter trails and no venom bubbles.
+ */
+export const renderQuality: { mode: 'auto' | 'high' | 'low'; low: boolean } = {
+  mode: 'auto',
+  low: false,
+};
+
+const PARTICLE_CAP_HIGH = 160;
+const PARTICLE_CAP_LOW = 60;
+
+const KIND_ID: Record<CellKind, number> = {
+  OPEN: 0,
+  START: 1,
+  CP1: 2,
+  CP2: 3,
+  CP3: 4,
+  EXIT: 5,
+  GRAY_WALL: 6,
+  TURN_DRAFT: 7,
+  ACTIVE_BRICK: 8,
+  MASTER_BRICK: 9,
+};
+const COLOR_ID = (c: BrickColor | undefined): number =>
+  c === 'yellow' ? 1 : c === 'red' ? 2 : c === 'green' ? 3 : 0;
+const THEME_IDS = Object.keys(BOARD_THEMES) as BoardThemeId[];
+
+const mix = (h: number, v: number): number => Math.imul(h ^ (v | 0), 0x01000193) >>> 0;
+
+const occupied = new Uint8Array(GRID_COLS * GRID_ROWS);
+
+let boardCanvas: HTMLCanvasElement | null = null;
+let boardViewHash = -1;
+let gridHash = -1;
+let fontEpoch = 0;
+let fontListenerAttached = false;
+
+const towerElementById = new Map<string, BrickColor | 'kinetic'>();
+const waypointCells: { px: number; py: number; label: string; accent: string }[] = [];
+const draftCells: GridCell[] = [];
+
+let lastNowSec = 0;
+let avgFrameSec = 1 / 60;
+let slowStreak = 0;
+let fastStreak = 0;
+let recoverFrames = 240;
+
+function updateRenderQuality(nowSec: number) {
+  const dt = nowSec - lastNowSec;
+  lastNowSec = nowSec;
+  if (renderQuality.mode !== 'auto') {
+    renderQuality.low = renderQuality.mode === 'low';
+    return;
+  }
+  // Ignore stalls (hidden tab, breakpoints): they say nothing about render cost.
+  if (dt <= 0 || dt > 0.25) return;
+  avgFrameSec += (dt - avgFrameSec) * 0.05;
+  if (!renderQuality.low) {
+    slowStreak = avgFrameSec > 0.026 ? slowStreak + 1 : 0;
+    if (slowStreak > 90) {
+      renderQuality.low = true;
+      slowStreak = 0;
+    }
+  } else {
+    fastStreak = avgFrameSec < 0.019 ? fastStreak + 1 : 0;
+    if (fastStreak > recoverFrames) {
+      renderQuality.low = false;
+      fastStreak = 0;
+      // Back off so a device on the edge does not flip every few seconds.
+      recoverFrames = Math.min(recoverFrames * 2, 3600);
+    }
+  }
+}
+
+function hashGrid(frame: RenderFrameInput): number {
+  let h = 0x811c9dc5;
+  for (let y = 0; y < GRID_ROWS; y++) {
+    const row = frame.grid[y];
+    for (let x = 0; x < GRID_COLS; x++) {
+      const c = row[x];
+      h = mix(h, KIND_ID[c.kind] | (COLOR_ID(c.color) << 4) | (COLOR_ID(c.secondaryColor) << 6));
+    }
+  }
+  h = mix(h, frame.towers.length);
+  for (const t of frame.towers) h = mix(h, t.y * GRID_COLS + t.x + 1);
+  return h;
+}
+
+/** Rebuilt only when the grid hash changes: tower elements, waypoint and draft cells. */
+function rebuildGridDerived(frame: RenderFrameInput) {
+  towerElementById.clear();
+  for (const t of frame.towers) {
+    towerElementById.set(t.id, computeTileModifiers(frame.grid, t.x, t.y).primaryElement);
+  }
+  waypointCells.length = 0;
+  draftCells.length = 0;
+  for (let y = 0; y < GRID_ROWS; y++) {
+    for (let x = 0; x < GRID_COLS; x++) {
+      const cell = frame.grid[y][x];
+      const px = x * TILE_SIZE;
+      const py = y * TILE_SIZE;
+      switch (cell.kind) {
+        case 'START':
+          waypointCells.push({ px, py, label: 'IN', accent: '#10B981' });
+          break;
+        case 'CP1':
+          waypointCells.push({ px, py, label: '1', accent: '#F59E0B' });
+          break;
+        case 'CP2':
+          waypointCells.push({ px, py, label: '2', accent: '#F59E0B' });
+          break;
+        case 'CP3':
+          waypointCells.push({ px, py, label: '3', accent: '#F59E0B' });
+          break;
+        case 'EXIT':
+          waypointCells.push({ px, py, label: 'OUT', accent: '#EF4444' });
+          break;
+        case 'TURN_DRAFT':
+          draftCells.push(cell);
+          break;
+        default:
+          break;
+      }
+    }
+  }
+}
+
+function towerElement(frame: RenderFrameInput, tower: Tower): BrickColor | 'kinetic' {
+  let el = towerElementById.get(tower.id);
+  if (el === undefined) {
+    el = computeTileModifiers(frame.grid, tower.x, tower.y).primaryElement;
+    towerElementById.set(tower.id, el);
+  }
+  return el;
+}
+
+function attachFontListener() {
+  if (fontListenerAttached) return;
+  fontListenerAttached = true;
+  // Brick badges use JetBrains Mono; repaint the cached board once the web font arrives.
+  if (typeof document !== 'undefined' && document.fonts?.addEventListener) {
+    document.fonts.addEventListener('loadingdone', () => {
+      fontEpoch++;
+    });
+  }
+}
+
+/** Floor and bricks, painted under the current camera into the offscreen board canvas. */
+function paintBoard(
+  target: CanvasRenderingContext2D,
+  base: DOMMatrix | undefined,
+  frame: RenderFrameInput,
+  theme: BoardThemeDefinition
+) {
+  target.setTransform(1, 0, 0, 1, 0, 0);
+  target.clearRect(0, 0, target.canvas.width, target.canvas.height);
+  if (base) target.setTransform(base);
+  target.imageSmoothingEnabled = false;
+
+  target.fillStyle = theme.baseBg;
+  target.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  target.translate(frame.camera.panX, frame.camera.panY);
+  target.scale(frame.camera.zoom, frame.camera.zoom);
+
+  // Flat checkerboard with hairline joints. The old four stud dots per cell are gone:
+  // they made the empty floor as busy as the maze.
+  target.strokeStyle = theme.gridLine;
+  target.lineWidth = 1;
+  for (let y = 0; y < GRID_ROWS; y++) {
+    for (let x = 0; x < GRID_COLS; x++) {
+      const px = x * TILE_SIZE;
+      const py = y * TILE_SIZE;
+      target.fillStyle = (x + y) % 2 === 0 ? theme.cellFill : theme.cellAlt;
+      target.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+      target.strokeRect(px + 0.5, py + 0.5, TILE_SIZE - 1, TILE_SIZE - 1);
+    }
+  }
+
+  for (let y = 0; y < GRID_ROWS; y++) {
+    for (let x = 0; x < GRID_COLS; x++) {
+      const cell = frame.grid[y][x];
+      const px = x * TILE_SIZE;
+      const py = y * TILE_SIZE;
+      const hasTower = occupied[y * GRID_COLS + x] === 1;
+
+      switch (cell.kind) {
+        case 'GRAY_WALL':
+          drawBrickTile(target, px, py, theme.grayWall, theme.grayWallLight, theme.grayWallDark);
+          break;
+        case 'TURN_DRAFT': {
+          const color = cell.color ?? 'yellow';
+          const meta = BRICK_COLORS[color];
+          drawBrickTile(target, px, py, meta.hex, meta.lightHex, meta.darkHex, {
+            isActiveGlow: true,
+            emblem: spriteAtlas.getEmblem(color),
+          });
+          break;
+        }
+        case 'ACTIVE_BRICK': {
+          const color = cell.color ?? 'yellow';
+          const meta = BRICK_COLORS[color];
+          drawBrickTile(target, px, py, meta.hex, meta.lightHex, meta.darkHex, {
+            isActiveGlow: true,
+            emblem: hasTower ? undefined : spriteAtlas.getEmblem(color),
+          });
+          break;
+        }
+        case 'MASTER_BRICK': {
+          const metaA = BRICK_COLORS[cell.color ?? 'red'];
+          const metaB = BRICK_COLORS[cell.secondaryColor ?? cell.color ?? 'yellow'];
+          const isDouble = !cell.secondaryColor || cell.secondaryColor === cell.color;
+          drawBrickTile(target, px, py, metaA.hex, metaA.lightHex, metaA.darkHex, {
+            secondaryBodyHex: isDouble ? undefined : metaB.hex,
+            secondaryLightHex: isDouble ? undefined : metaB.lightHex,
+            secondaryDarkHex: isDouble ? undefined : metaB.darkHex,
+            isMaster: true,
+            isDouble,
+            glyph: hasTower ? undefined : isDouble ? '×2' : '★',
+            badgeCorner: hasTower && isDouble ? '×2' : undefined,
+          });
+          break;
+        }
+        default:
+          break;
+      }
+    }
+  }
+}
+
 function drawBrickTile(
   ctx: CanvasRenderingContext2D,
   px: number,
@@ -80,6 +323,8 @@ function drawBrickTile(
     isDouble?: boolean;
     badgeCorner?: string;
     glyph?: string;
+    /** Pixel element emblem pressed into the brick; replaces the studs when present. */
+    emblem?: HTMLCanvasElement;
     alpha?: number;
   }
 ) {
@@ -123,7 +368,12 @@ function drawBrickTile(
     { ox: 20, oy: 18, isSec: true },
   ];
 
-  for (const st of studOffsets) {
+  if (opts?.emblem) {
+    const em = opts.emblem;
+    ctx.drawImage(em, px + Math.round((s - em.width) / 2) + 1, py + Math.round((s - em.height) / 2));
+  }
+
+  for (const st of opts?.emblem ? [] : studOffsets) {
     const sx = px + st.ox;
     const sy = py + st.oy;
     const useSec = st.isSec && opts?.secondaryBodyHex;
@@ -248,13 +498,8 @@ function drawPixelTower(
     ctx.strokeRect(tower.x * TILE_SIZE + 1, tower.y * TILE_SIZE + 1, TILE_SIZE - 2, TILE_SIZE - 2);
   }
 
-  // Elementally tinted glow under turret mount when on a colored brick
-  if (element !== 'kinetic') {
-    ctx.fillStyle = BRICK_COLORS[element].hex;
-    ctx.globalAlpha = (isRelocating ? 0.25 : 0.35) + 0.12 * Math.sin(nowSec * 5);
-    ctx.fillRect(cx - 12, cy - 12, 24, 24);
-    ctx.globalAlpha = isRelocating ? 0.55 : 1;
-  }
+  // (No pulsing glow square under the turret any more: the turret's own palette and the
+  // brick under it already show the element, and the pulse was noise across the board.)
 
   // Draw rotating 16x16 pixel sprite with barrel recoil kickback
   ctx.translate(cx, cy);
@@ -326,14 +571,11 @@ function drawCreep(ctx: CanvasRenderingContext2D, creep: Creep) {
   const spriteTop = Math.round(y - drawH / 2);
   ctx.drawImage(sprite, spriteLeft, spriteTop, drawW, drawH);
 
-  // Subtle translucent toxic tint + animated rising venom bubbles for slowed/poisoned mobs
-  if (isSlowed || isPoisoned) {
-    ctx.save();
-    ctx.fillStyle = isHeavySlow ? 'rgba(52, 211, 153, 0.28)' : 'rgba(16, 185, 129, 0.2)';
-    ctx.fillRect(spriteLeft + 2, spriteTop + 2, drawW - 4, drawH - 4);
-    ctx.restore();
-
-    const bubbleCount = isHeavySlow ? 3 : 2;
+  // One cue per status: slow = the ground ring above, poison = rising bubbles,
+  // burn = flame pip, shred = amber pip. (The green tint, green HP border and ▼ pip that
+  // used to repeat "slowed" are gone.)
+  if (isPoisoned && !renderQuality.low) {
+    const bubbleCount = 2;
     for (let b = 0; b < bubbleCount; b++) {
       const phase = (creep.animTime * 1.9 + b * 0.41) % 1;
       const bx = x - Math.floor(drawW * 0.3) + b * Math.floor(drawW * 0.3);
@@ -352,31 +594,20 @@ function drawCreep(ctx: CanvasRenderingContext2D, creep: Creep) {
     ctx.fillRect(spriteLeft + 2, spriteTop - 1 - fl, 2, 2);
   }
 
-  // Crisp HP bar (bordered emerald when slowed so debuff status reads even zoomed out)
+  // HP bar only once the creep is hurt (bosses always show theirs), so a fresh wave
+  // walking in is not a row of identical full green bars.
   const barW = Math.max(18, drawW + 2);
   const barX = x - Math.floor(barW / 2);
   const barY = spriteTop - 7;
   const hpRatio = Math.max(0, Math.min(1, creep.hp / creep.maxHp));
 
-  ctx.fillStyle = isSlowed ? '#064E3B' : '#0F172A';
-  ctx.fillRect(barX - 1, barY - 1, barW + 2, 5);
-  if (isSlowed) {
-    ctx.strokeStyle = isHeavySlow ? '#6EE7B7' : '#34D399';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(barX - 1.5, barY - 1.5, barW + 3, 6);
+  if (hpRatio < 1 || creep.trait === 'boss') {
+    ctx.fillStyle = '#0F172A';
+    ctx.fillRect(barX - 1, barY - 1, barW + 2, 5);
+    ctx.fillStyle = hpRatio > 0.5 ? '#22C55E' : hpRatio > 0.25 ? '#F59E0B' : '#EF4444';
+    ctx.fillRect(barX, barY, Math.round(barW * hpRatio), 3);
   }
-  ctx.fillStyle = hpRatio > 0.5 ? '#22C55E' : hpRatio > 0.25 ? '#F59E0B' : '#EF4444';
-  ctx.fillRect(barX, barY, Math.round(barW * hpRatio), 3);
 
-  // Compact debuff pips right beside the HP bar (▼ = slowed, ! = armor shredded)
-  if (isSlowed) {
-    const cx = barX + barW + 4;
-    const cy = barY;
-    ctx.fillStyle = isHeavySlow ? '#A7F3D0' : '#34D399';
-    ctx.fillRect(cx - 2, cy, 5, 1);
-    ctx.fillRect(cx - 1, cy + 1, 3, 1);
-    ctx.fillRect(cx, cy + 2, 1, 2);
-  }
   if (isShredded) {
     ctx.fillStyle = '#F59E0B';
     ctx.fillRect(barX - 5, barY, 2, 3);
@@ -391,11 +622,11 @@ function drawStylizedProjectile(ctx: CanvasRenderingContext2D, proj: Projectile)
   const arcZ = proj.arcHeight > 0 ? Math.sin(progress * Math.PI) * proj.arcHeight : 0;
   const elColor = getElementAccent(proj.element);
 
-  // 1. Stepped pixel elemental motion trail
-  for (let i = 0; i < proj.trail.length; i++) {
+  // 1. Stepped pixel elemental motion trail (only the newest two dots in low quality)
+  const trailStart = renderQuality.low ? Math.max(0, proj.trail.length - 2) : 0;
+  for (let i = trailStart; i < proj.trail.length; i++) {
     const pt = proj.trail[i];
     const ratio = (i + 1) / (proj.trail.length + 1);
-    ctx.save();
     ctx.globalAlpha = ratio * 0.65;
     const sz =
       proj.towerType === 'cannon'
@@ -408,8 +639,8 @@ function drawStylizedProjectile(ctx: CanvasRenderingContext2D, proj: Projectile)
           ? '#6EE7B7'
           : elColor;
     ctx.fillRect(Math.round(pt.x - sz / 2), Math.round(pt.y - pt.z - sz / 2), sz, sz);
-    ctx.restore();
   }
+  ctx.globalAlpha = 1;
 
   const drawX = Math.round(proj.x);
   const drawY = Math.round(proj.y - arcZ);
@@ -442,35 +673,47 @@ function drawStylizedProjectile(ctx: CanvasRenderingContext2D, proj: Projectile)
 export function renderArenaFrame(ctx: CanvasRenderingContext2D, frame: RenderFrameInput) {
   ctx.imageSmoothingEnabled = false;
   const theme = BOARD_THEMES[frame.themeId];
+  updateRenderQuality(frame.nowSec);
+  attachFontListener();
 
-  // Clear entire viewport
-  ctx.fillStyle = theme.baseBg;
-  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  occupied.fill(0);
+  for (const t of frame.towers) occupied[t.y * GRID_COLS + t.x] = 1;
+  const isOccupied = (x: number, y: number) => occupied[y * GRID_COLS + x] === 1;
+
+  const g = hashGrid(frame);
+  if (g !== gridHash) {
+    gridHash = g;
+    rebuildGridDerived(frame);
+  }
+
+  // 1. Floor + bricks from the cached board layer (repainted only when something changed)
+  const cw = ctx.canvas?.width ?? CANVAS_WIDTH;
+  const ch = ctx.canvas?.height ?? CANVAS_HEIGHT;
+  let v = mix(g, THEME_IDS.indexOf(frame.themeId));
+  v = mix(v, Math.round(frame.camera.zoom * 1000));
+  v = mix(v, Math.round(frame.camera.panX * 100));
+  v = mix(v, Math.round(frame.camera.panY * 100));
+  v = mix(v, fontEpoch);
+  v = mix(v, cw * 4096 + ch);
+  if (!boardCanvas || v !== boardViewHash) {
+    if (!boardCanvas) boardCanvas = document.createElement('canvas');
+    if (boardCanvas.width !== cw) boardCanvas.width = cw;
+    if (boardCanvas.height !== ch) boardCanvas.height = ch;
+    const bctx = boardCanvas.getContext('2d');
+    if (bctx) {
+      paintBoard(bctx, ctx.getTransform?.(), frame, theme);
+      boardViewHash = v;
+    }
+  }
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(boardCanvas, 0, 0);
+  ctx.restore();
 
   ctx.save();
   // Apply camera zoom & pan transform
   ctx.translate(frame.camera.panX, frame.camera.panY);
   ctx.scale(frame.camera.zoom, frame.camera.zoom);
-
-  // 1. Dimpled plastic baseplate grid
-  for (let y = 0; y < GRID_ROWS; y++) {
-    for (let x = 0; x < GRID_COLS; x++) {
-      const px = x * TILE_SIZE;
-      const py = y * TILE_SIZE;
-      ctx.fillStyle = (x + y) % 2 === 0 ? theme.cellFill : theme.cellAlt;
-      ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
-
-      ctx.fillStyle = theme.studDot;
-      ctx.fillRect(px + 9, py + 9, 3, 3);
-      ctx.fillRect(px + 24, py + 9, 3, 3);
-      ctx.fillRect(px + 9, py + 24, 3, 3);
-      ctx.fillRect(px + 24, py + 24, 3, 3);
-
-      ctx.strokeStyle = theme.gridLine;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(px + 0.5, py + 0.5, TILE_SIZE - 1, TILE_SIZE - 1);
-    }
-  }
 
   // 2. Animated BFS Route
   const drawRoute = (coords: Coord[], color: string, alpha: number, dashOffset: number) => {
@@ -499,92 +742,35 @@ export function renderArenaFrame(ctx: CanvasRenderingContext2D, frame: RenderFra
     drawRoute(frame.path, theme.pathColor, frame.phase === 'COMBAT' ? 0.3 : 0.58, frame.nowSec * 22);
   }
 
-  // 3. Bricks & Waypoints
-  const towerSet = new Set(frame.towers.map((t) => `${t.x},${t.y}`));
+  // 3. Animated waypoint pads and draft-pick overlays (the bricks themselves are cached)
+  for (const wp of waypointCells) {
+    drawWaypointPad(ctx, wp.px, wp.py, wp.label, wp.accent, frame.nowSec);
+  }
 
-  for (let y = 0; y < GRID_ROWS; y++) {
-    for (let x = 0; x < GRID_COLS; x++) {
-      const cell = frame.grid[y][x];
-      const px = x * TILE_SIZE;
-      const py = y * TILE_SIZE;
-      const hasTower = towerSet.has(`${x},${y}`);
-
-      switch (cell.kind) {
-        case 'START':
-          drawWaypointPad(ctx, px, py, 'IN', '#10B981', frame.nowSec);
-          break;
-        case 'CP1':
-          drawWaypointPad(ctx, px, py, '1', '#F59E0B', frame.nowSec);
-          break;
-        case 'CP2':
-          drawWaypointPad(ctx, px, py, '2', '#F59E0B', frame.nowSec);
-          break;
-        case 'CP3':
-          drawWaypointPad(ctx, px, py, '3', '#F59E0B', frame.nowSec);
-          break;
-        case 'EXIT':
-          drawWaypointPad(ctx, px, py, 'OUT', '#EF4444', frame.nowSec);
-          break;
-        case 'GRAY_WALL':
-          drawBrickTile(ctx, px, py, theme.grayWall, theme.grayWallLight, theme.grayWallDark);
-          break;
-        case 'TURN_DRAFT': {
-          const meta = BRICK_COLORS[cell.color ?? 'yellow'];
-          drawBrickTile(ctx, px, py, meta.hex, meta.lightHex, meta.darkHex, {
-            isActiveGlow: true,
-            glyph: meta.glyph,
-          });
-          if (frame.phase === 'BUILD_PICK') {
-            // Nothing chosen yet: all four pulse. One chosen: it gets a steady outline and
-            // the others dim, since they are the ones that will harden into gray walls.
-            const sel = frame.selectedCoord;
-            const draftChosen =
-              sel !== null && frame.grid[sel.y]?.[sel.x]?.kind === 'TURN_DRAFT';
-            const isChosen = draftChosen && sel!.x === cell.x && sel!.y === cell.y;
-            ctx.save();
-            if (isChosen) {
-              ctx.strokeStyle = '#F8FAFC';
-              ctx.lineWidth = 3;
-              ctx.strokeRect(px + 1.5, py + 1.5, TILE_SIZE - 3, TILE_SIZE - 3);
-            } else if (draftChosen) {
-              ctx.fillStyle = 'rgba(15, 23, 42, 0.5)';
-              ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
-            } else {
-              ctx.strokeStyle = '#FDE047';
-              ctx.globalAlpha = 0.55 + 0.45 * Math.sin(frame.nowSec * 6.5);
-              ctx.lineWidth = 3;
-              ctx.strokeRect(px + 1.5, py + 1.5, TILE_SIZE - 3, TILE_SIZE - 3);
-            }
-            ctx.restore();
-          }
-          break;
-        }
-        case 'ACTIVE_BRICK': {
-          const meta = BRICK_COLORS[cell.color ?? 'yellow'];
-          drawBrickTile(ctx, px, py, meta.hex, meta.lightHex, meta.darkHex, {
-            isActiveGlow: true,
-            glyph: hasTower ? undefined : meta.glyph,
-          });
-          break;
-        }
-        case 'MASTER_BRICK': {
-          const metaA = BRICK_COLORS[cell.color ?? 'red'];
-          const metaB = BRICK_COLORS[cell.secondaryColor ?? cell.color ?? 'yellow'];
-          const isDouble = !cell.secondaryColor || cell.secondaryColor === cell.color;
-          drawBrickTile(ctx, px, py, metaA.hex, metaA.lightHex, metaA.darkHex, {
-            secondaryBodyHex: isDouble ? undefined : metaB.hex,
-            secondaryLightHex: isDouble ? undefined : metaB.lightHex,
-            secondaryDarkHex: isDouble ? undefined : metaB.darkHex,
-            isMaster: true,
-            isDouble,
-            glyph: hasTower ? undefined : isDouble ? '×2' : '★',
-            badgeCorner: hasTower && isDouble ? '×2' : undefined,
-          });
-          break;
-        }
-        default:
-          break;
+  if (frame.phase === 'BUILD_PICK' && draftCells.length > 0) {
+    // Nothing chosen yet: all four pulse. One chosen: it gets a steady outline and
+    // the others dim, since they are the ones that will harden into gray walls.
+    const sel = frame.selectedCoord;
+    const draftChosen = sel !== null && frame.grid[sel.y]?.[sel.x]?.kind === 'TURN_DRAFT';
+    for (const cell of draftCells) {
+      const px = cell.x * TILE_SIZE;
+      const py = cell.y * TILE_SIZE;
+      const isChosen = draftChosen && sel!.x === cell.x && sel!.y === cell.y;
+      ctx.save();
+      if (isChosen) {
+        ctx.strokeStyle = '#F8FAFC';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(px + 1.5, py + 1.5, TILE_SIZE - 3, TILE_SIZE - 3);
+      } else if (draftChosen) {
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.5)';
+        ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+      } else {
+        ctx.strokeStyle = '#FDE047';
+        ctx.globalAlpha = 0.55 + 0.45 * Math.sin(frame.nowSec * 6.5);
+        ctx.lineWidth = 3;
+        ctx.strokeRect(px + 1.5, py + 1.5, TILE_SIZE - 3, TILE_SIZE - 3);
       }
+      ctx.restore();
     }
   }
 
@@ -624,7 +810,7 @@ export function renderArenaFrame(ctx: CanvasRenderingContext2D, frame: RenderFra
           (cell.kind === 'GRAY_WALL' ||
             cell.kind === 'ACTIVE_BRICK' ||
             cell.kind === 'MASTER_BRICK') &&
-          !towerSet.has(`${x},${y}`);
+          !isOccupied(x, y);
         if (canMount) {
           ctx.save();
           ctx.strokeStyle = '#34D399';
@@ -671,14 +857,14 @@ export function renderArenaFrame(ctx: CanvasRenderingContext2D, frame: RenderFra
     const cell = frame.grid[y]?.[x];
     const px = x * TILE_SIZE;
     const py = y * TILE_SIZE;
-    const isUnoccupiedGray = cell?.kind === 'GRAY_WALL' && !towerSet.has(`${x},${y}`);
+    const isUnoccupiedGray = cell?.kind === 'GRAY_WALL' && !isOccupied(x, y);
 
     if (frame.phase === 'BUILD_PLACE' && frame.nextDraftColor && cell) {
       if ((cell.kind === 'OPEN' || isUnoccupiedGray) && frame.previewValid) {
         const meta = BRICK_COLORS[frame.nextDraftColor];
         drawBrickTile(ctx, px, py, meta.hex, meta.lightHex, meta.darkHex, {
           alpha: 0.78,
-          glyph: meta.glyph,
+          emblem: spriteAtlas.getEmblem(frame.nextDraftColor),
         });
         if (isUnoccupiedGray) {
           ctx.save();
@@ -708,7 +894,7 @@ export function renderArenaFrame(ctx: CanvasRenderingContext2D, frame: RenderFra
       (cell.kind === 'GRAY_WALL' ||
         cell.kind === 'ACTIVE_BRICK' ||
         cell.kind === 'MASTER_BRICK') &&
-      !towerSet.has(`${x},${y}`)
+      !isOccupied(x, y)
     ) {
       const tType =
         frame.placingTowerType ??
@@ -754,8 +940,7 @@ export function renderArenaFrame(ctx: CanvasRenderingContext2D, frame: RenderFra
     const isSel =
       frame.selectedCoord?.x === tower.x && frame.selectedCoord?.y === tower.y;
     const isReloc = frame.relocatingTowerId === tower.id;
-    const mods = computeTileModifiers(frame.grid, tower.x, tower.y);
-    drawPixelTower(ctx, tower, mods.primaryElement, isSel, isReloc, frame.nowSec);
+    drawPixelTower(ctx, tower, towerElement(frame, tower), isSel, isReloc, frame.nowSec);
   }
 
   // 10. Animated Pixel Creeps
@@ -810,28 +995,29 @@ export function renderArenaFrame(ctx: CanvasRenderingContext2D, frame: RenderFra
     drawStylizedProjectile(ctx, proj);
   }
 
-  // 14. Pixel Particles
-  for (const p of frame.particles) {
-    const alpha = Math.max(0, p.ttl / p.maxTtl);
-    ctx.save();
-    ctx.globalAlpha = alpha;
+  // 14. Pixel Particles (newest first wins when over the cap; no per-particle save/restore)
+  const particleCap = renderQuality.low ? PARTICLE_CAP_LOW : PARTICLE_CAP_HIGH;
+  for (let i = Math.max(0, frame.particles.length - particleCap); i < frame.particles.length; i++) {
+    const p = frame.particles[i];
+    ctx.globalAlpha = Math.max(0, p.ttl / p.maxTtl);
     ctx.fillStyle = p.color;
     ctx.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
-    ctx.restore();
   }
+  ctx.globalAlpha = 1;
 
-  // 15. Floating Numbers
-  for (const ft of frame.floatingTexts) {
-    const alpha = Math.max(0, ft.ttl / ft.maxTtl);
-    ctx.save();
-    ctx.globalAlpha = alpha;
+  // 15. Floating numbers (crits, kill bounties, wave banner)
+  if (frame.floatingTexts.length > 0) {
     ctx.font = 'bold 11px "JetBrains Mono", monospace';
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#0F172A';
-    ctx.fillText(ft.text, Math.round(ft.x) + 1, Math.round(ft.y) + 1);
-    ctx.fillStyle = ft.color;
-    ctx.fillText(ft.text, Math.round(ft.x), Math.round(ft.y));
-    ctx.restore();
+    ctx.textBaseline = 'alphabetic';
+    for (const ft of frame.floatingTexts) {
+      ctx.globalAlpha = Math.max(0, ft.ttl / ft.maxTtl);
+      ctx.fillStyle = '#0F172A';
+      ctx.fillText(ft.text, Math.round(ft.x) + 1, Math.round(ft.y) + 1);
+      ctx.fillStyle = ft.color;
+      ctx.fillText(ft.text, Math.round(ft.x), Math.round(ft.y));
+    }
+    ctx.globalAlpha = 1;
   }
 
   ctx.restore();
