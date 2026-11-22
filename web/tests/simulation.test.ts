@@ -79,7 +79,8 @@ describe('combat simulation', () => {
     })
     const leaked = DIFFICULTY_DEFS.standard.startingLives - res.lives
     expect(res.cleared).toBe(true)
-    expect(res.kills).toBeGreaterThanOrEqual(10)
+    // One tower alone does not hold wave 1 (by design since the Nov 2026 tuning); it must still kill some.
+    expect(res.kills).toBeGreaterThan(0)
     expect(res.kills + leaked).toBe(def.count)
     expect(res.gold).toBe(res.kills * def.bounty + def.clearBonus)
   })

@@ -41,7 +41,9 @@ export const DIFFICULTY_DEFS: Record<DifficultyId, DifficultyDefinition> = {
     label: 'Standard',
     tagline: '20 lives · Balanced 30-wave pace',
     startingLives: 20,
-    hpMult: 1.0,
+    // Tuned with `npm run balance` (Nov 2026): the strong bot wins about 70% on
+    // Standard, 35-40% on Hard and well under 10% on Brutal, across all three maps.
+    hpMult: 1.5,
     speedMult: 1.0,
     armorBonus: 0,
     xpMult: 1.0,
@@ -49,9 +51,9 @@ export const DIFFICULTY_DEFS: Record<DifficultyId, DifficultyDefinition> = {
   hard: {
     id: 'hard',
     label: 'Hard',
-    tagline: '15 lives · +32% HP · Faster waves · +35% XP',
+    tagline: '15 lives · +10% HP · Faster waves · +35% XP',
     startingLives: 15,
-    hpMult: 1.32,
+    hpMult: 1.65,
     speedMult: 1.08,
     armorBonus: 0.05,
     xpMult: 1.35,
@@ -59,9 +61,9 @@ export const DIFFICULTY_DEFS: Record<DifficultyId, DifficultyDefinition> = {
   brutal: {
     id: 'brutal',
     label: 'Brutal',
-    tagline: '10 lives · +68% HP · Heavy armor · +75% XP',
+    tagline: '10 lives · +20% HP · Heavy armor · +75% XP',
     startingLives: 10,
-    hpMult: 1.68,
+    hpMult: 1.8,
     speedMult: 1.15,
     armorBonus: 0.1,
     xpMult: 1.75,
@@ -276,9 +278,9 @@ export const HERO_BOUNTY_MULT = 3;
 /** Lives lost when a hero reaches the exit (normal 1, boss 3). */
 export const HERO_LIVES_COST = 2;
 /** While the vanguard lives, the rest of its wave moves this much faster. */
-export const VANGUARD_SPEED_BONUS = 0.25;
+export const VANGUARD_SPEED_BONUS = 0.15;
 /** While the warden lives, the rest of its wave heals this share of max HP per second. */
-export const WARDEN_REGEN_PER_SEC = 0.03;
+export const WARDEN_REGEN_PER_SEC = 0.015;
 
 /**
  * Which special a wave carries. Boss waves (every 5th) have none; otherwise every
