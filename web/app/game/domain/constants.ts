@@ -7,6 +7,7 @@ import type {
   SynergyInfo,
   TowerType,
   WaveDefinition,
+  WaveModifier,
 } from './types';
 
 export const GRID_COLS = 24;
@@ -362,8 +363,53 @@ export const BOARD_THEMES: Record<BoardThemeId, BoardThemeDefinition> = {
   },
 };
 
-// Rebalanced tougher wave curve scaled by selected difficulty
+// --- Wave specials -------------------------------------------------------
+/** Rally waves: each kill makes every remaining creep of the wave this much tougher (compounding). */
+export const RALLY_TOUGHNESS_PER_KILL = 0.03;
+/** Escort heroes: health and bounty multiplier versus a normal creep of the wave. */
+export const HERO_HP_MULT = 4;
+export const HERO_BOUNTY_MULT = 4;
+/** Lives lost when a hero reaches the exit (normal 1, boss 3). */
+export const HERO_LIVES_COST = 2;
+/** While the vanguard lives, the rest of its wave moves this much faster. */
+export const VANGUARD_SPEED_BONUS = 0.25;
+/** While the warden lives, the rest of its wave heals this share of max HP per second. */
+export const WARDEN_REGEN_PER_SEC = 0.03;
+
+/**
+ * Which special a wave carries. Boss waves (every 5th) have none; otherwise every
+ * 3rd wave is a rally wave, and from wave 4 the waves in between get an escort.
+ */
+export function getWaveModifier(wave: number): WaveModifier | undefined {
+  if (wave % 5 === 0) return undefined;
+  if (wave % 3 === 0) return 'rally';
+  if (wave >= 4 && wave % 3 === 1) return 'escort';
+  return undefined;
+}
+
+/** Player-facing name and rule text for a wave special. */
+export const WAVE_MODIFIER_INFO: Record<WaveModifier, { label: string; detail: string }> = {
+  rally: {
+    label: 'Rally',
+    detail: `Every kill makes the rest of the wave ${Math.round(RALLY_TOUGHNESS_PER_KILL * 100)}% tougher. Kill them together.`,
+  },
+  escort: {
+    label: 'Escort',
+    detail: `A Vanguard leads (+${Math.round(VANGUARD_SPEED_BONUS * 100)}% wave speed while alive) and a Warden trails (heals the wave ${Math.round(WARDEN_REGEN_PER_SEC * 100)}%/s while alive). Heroes cost ${HERO_LIVES_COST} lives if they leak.`,
+  },
+};
+
 export function getWaveDefinition(
+  wave: number,
+  difficulty: DifficultyId = 'standard'
+): WaveDefinition {
+  const base = baseWaveDefinition(wave, difficulty);
+  const modifier = getWaveModifier(wave);
+  return modifier ? { ...base, modifier } : base;
+}
+
+// Rebalanced tougher wave curve scaled by selected difficulty
+function baseWaveDefinition(
   wave: number,
   difficulty: DifficultyId = 'standard'
 ): WaveDefinition {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ArrowLeft, Play, Skull } from '@lucide/vue';
-import { DIFFICULTY_DEFS, MAX_WAVES } from '~/game/domain/constants';
+import { DIFFICULTY_DEFS, MAX_WAVES, WAVE_MODIFIER_INFO, getWaveModifier } from '~/game/domain/constants';
 import type { DifficultyId, GamePhase } from '~/game/domain/types';
 
 const props = defineProps<{
@@ -24,10 +24,13 @@ const emit = defineEmits<{
 
 const canSendWave = computed(() => props.phase === 'BUILD_MANAGE');
 const isBossWave = computed(() => props.wave % 5 === 0);
+const waveModifier = computed(() => getWaveModifier(props.wave));
 const waveSubtext = computed(() =>
   isBossWave.value
     ? 'BOSS'
-    : props.endlessMode
+    : waveModifier.value
+      ? WAVE_MODIFIER_INFO[waveModifier.value].label
+      : props.endlessMode
       ? 'Endless'
       : props.difficulty !== 'standard'
         ? DIFFICULTY_DEFS[props.difficulty].label

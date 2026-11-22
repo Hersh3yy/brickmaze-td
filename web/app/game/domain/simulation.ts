@@ -5,7 +5,19 @@
 // live game (see composables/useArenaMatch.ts) and can be run in tests to check
 // balance without a browser.
 
-import { BRICK_COLORS, MAX_WAVES, TILE_SIZE, TOWER_DEFS, getWaveDefinition } from './constants';
+import {
+  BRICK_COLORS,
+  HERO_BOUNTY_MULT,
+  HERO_HP_MULT,
+  HERO_LIVES_COST,
+  MAX_WAVES,
+  RALLY_TOUGHNESS_PER_KILL,
+  TILE_SIZE,
+  TOWER_DEFS,
+  VANGUARD_SPEED_BONUS,
+  WARDEN_REGEN_PER_SEC,
+  getWaveDefinition,
+} from './constants';
 import { computeTileModifiers } from './synergy';
 import type {
   BeamEffect,
@@ -36,6 +48,11 @@ export interface SimState {
   totalKills: number;
   matchEnded: boolean;
   lastShotAudioAt: number;
+  /** Creeps spawned so far this wave, and how many the wave has in total (heroes included). */
+  waveSpawned: number;
+  waveTotal: number;
+  /** Rally waves: toughness multiplier built up by kills, applied to creeps still to spawn. */
+  rallyMult: number;
 }
 
 /** Match values the simulation reads each tick. It writes back `gold` and `lives`. */
@@ -76,6 +93,9 @@ export function createSimState(longestPathSeen = 0): SimState {
     totalKills: 0,
     matchEnded: false,
     lastShotAudioAt: 0,
+    waveSpawned: 0,
+    waveTotal: 0,
+    rallyMult: 1,
   };
 }
 
@@ -93,14 +113,21 @@ export function resetSimState(sim: SimState, longestPathSeen = 0): void {
   sim.totalKills = 0;
   sim.matchEnded = false;
   sim.lastShotAudioAt = 0;
+  sim.waveSpawned = 0;
+  sim.waveTotal = 0;
+  sim.rallyMult = 1;
 }
 
 /** Queues the creeps of `world.wave`. Returns how many will spawn. */
 export function beginWave(sim: SimState, wave: number, difficulty: DifficultyId): number {
   const waveDef = getWaveDefinition(wave, difficulty);
-  sim.spawnQueueLeft = waveDef.count;
+  const total = waveDef.count + (waveDef.modifier === 'escort' ? 2 : 0);
+  sim.spawnQueueLeft = total;
   sim.spawnTimer = 0.2;
-  return waveDef.count;
+  sim.waveSpawned = 0;
+  sim.waveTotal = total;
+  sim.rallyMult = 1;
+  return total;
 }
 
 export function elementAccent(el: BrickColor | 'kinetic'): string {
@@ -180,6 +207,7 @@ export function stepSimulation(
   rng: () => number = Math.random
 ): void {
   const dt = rawDt * world.speed;
+  const waveDef = getWaveDefinition(world.wave, world.difficulty);
 
   const spawnBurst = (x: number, y: number, color: string, count = 6, maxSpeed = 85) => {
     for (let i = 0; i < count; i++) {
@@ -213,15 +241,33 @@ export function stepSimulation(
     sim.floatingTexts.push({ id: nextUid('ft'), x, y, text, color, ttl: 0.72, maxTtl: 0.72 });
   };
 
+  // Rally waves: every kill makes the rest of the wave tougher, including creeps not yet spawned.
+  const onCreepKilled = (dead: Creep) => {
+    if (waveDef.modifier !== 'rally') return;
+    const mult = 1 + RALLY_TOUGHNESS_PER_KILL;
+    sim.rallyMult *= mult;
+    for (const c of sim.creeps) {
+      if (c === dead || c.hp <= 0) continue;
+      c.hp *= mult;
+      c.maxHp *= mult;
+    }
+  };
+
+  /**
+   * Armor only stops physical damage: direct hits from bolts, shells and the pulse ring.
+   * Magic damage (lightning chains, splash on anyone but the main target) ignores it,
+   * as does poison and burn, which are applied elsewhere. The Rail Sniper pierces armor.
+   */
   const damageCreep = (
     creep: Creep,
     rawDamage: number,
-    opts: { isCrit: boolean; ignoreArmor?: boolean; sourceTowerId: string }
+    opts: { isCrit: boolean; ignoreArmor?: boolean; magic?: boolean; sourceTowerId: string }
   ) => {
     if (creep.hp <= 0) return;
-    const effectiveArmor = opts.ignoreArmor
-      ? 0
-      : Math.max(0, creep.armor - (creep.shredTimer > 0 ? 0.25 : 0));
+    const effectiveArmor =
+      opts.ignoreArmor || opts.magic
+        ? 0
+        : Math.max(0, creep.armor - (creep.shredTimer > 0 ? 0.25 : 0));
     const dealt = Math.max(1, rawDamage * (1 - effectiveArmor));
     creep.hp -= dealt;
 
@@ -243,6 +289,7 @@ export function stepSimulation(
         creep.trait === 'boss' ? '#F43F5E' : '#F8FAFC',
         creep.trait === 'boss' ? BOSS_KILL_BURST : KILL_BURST
       );
+      onCreepKilled(creep);
     }
   };
 
@@ -292,7 +339,11 @@ export function stepSimulation(
       }
 
       spawnRing(nextTarget.x, nextTarget.y, 14, opts.spreadVenom ? '#34D399' : '#FDE047', 0.14);
-      damageCreep(nextTarget, chainDmg, { isCrit: false, sourceTowerId: opts.sourceTowerId });
+      damageCreep(nextTarget, chainDmg, {
+        isCrit: false,
+        magic: true,
+        sourceTowerId: opts.sourceTowerId,
+      });
       chainDmg *= 0.8;
     }
 
@@ -341,14 +392,22 @@ export function stepSimulation(
 
   if (world.phase !== 'COMBAT') return;
 
-  const waveDef = getWaveDefinition(world.wave, world.difficulty);
-
   // 1. Spawn creeps. Each one keeps its own path snapshot, so deleting a gray wall
   //    mid-wave never makes creeps already walking clip or teleport.
   if (sim.spawnQueueLeft > 0) {
     sim.spawnTimer -= dt;
     const startTile = world.path[0];
     if (sim.spawnTimer <= 0 && startTile) {
+      const index = sim.waveSpawned;
+      const hero =
+        waveDef.modifier === 'escort'
+          ? index === 0
+            ? ('vanguard' as const)
+            : index === sim.waveTotal - 1
+              ? ('warden' as const)
+              : undefined
+          : undefined;
+      const hp = waveDef.hp * sim.rallyMult * (hero ? HERO_HP_MULT : 1);
       sim.creeps.push({
         id: nextUid('cr'),
         wave: world.wave,
@@ -357,11 +416,11 @@ export function stepSimulation(
         y: startTile.y * TILE_SIZE + TILE_SIZE / 2,
         path: world.path.slice(),
         pathIndex: 1,
-        hp: waveDef.hp,
-        maxHp: waveDef.hp,
+        hp,
+        maxHp: hp,
         speed: waveDef.speed,
         armor: waveDef.armor,
-        bounty: waveDef.bounty,
+        bounty: hero ? waveDef.bounty * HERO_BOUNTY_MULT : waveDef.bounty,
         slowTimer: 0,
         slowFactor: 0,
         poisonTimer: 0,
@@ -370,14 +429,24 @@ export function stepSimulation(
         burnDps: 0,
         shredTimer: 0,
         animTime: rng() * 6,
-        radius: waveDef.trait === 'boss' ? 13 : 8,
+        radius: waveDef.trait === 'boss' ? 13 : hero ? 11 : 8,
+        hero,
       });
+      sim.waveSpawned += 1;
       sim.spawnQueueLeft -= 1;
       sim.spawnTimer = waveDef.spawnInterval;
     }
   }
 
   // 2. Move creeps and tick Venom DoT / Fire burn / regeneration
+  let vanguardAlive = false;
+  let wardenAlive = false;
+  for (const c of sim.creeps) {
+    if (c.hp <= 0) continue;
+    if (c.hero === 'vanguard') vanguardAlive = true;
+    else if (c.hero === 'warden') wardenAlive = true;
+  }
+
   let livesLostThisFrame = 0;
   for (let i = sim.creeps.length - 1; i >= 0; i--) {
     const c = sim.creeps[i]!;
@@ -390,6 +459,11 @@ export function stepSimulation(
 
     if (c.trait === 'regen' && c.hp < c.maxHp) {
       c.hp = Math.min(c.maxHp, c.hp + c.maxHp * 0.055 * dt);
+    }
+
+    // Escort aura: the warden heals the rest of its wave while it lives.
+    if (wardenAlive && !c.hero && c.hp < c.maxHp) {
+      c.hp = Math.min(c.maxHp, c.hp + c.maxHp * WARDEN_REGEN_PER_SEC * dt);
     }
 
     if (c.slowTimer > 0) {
@@ -414,11 +488,15 @@ export function stepSimulation(
       world.gold += c.bounty;
       addFloatingText(c.x, c.y - 8, `+${c.bounty}g`, c.poisonTimer > 0 ? '#4ADE80' : '#FB923C');
       spawnBurst(c.x, c.y, c.poisonTimer > 0 ? '#10B981' : '#EF4444', KILL_BURST);
+      onCreepKilled(c);
       sim.creeps.splice(i, 1);
       continue;
     }
 
-    let remaining = c.speed * (1 - c.slowFactor) * TILE_SIZE * dt;
+    // Escort aura: while the vanguard lives the whole wave moves faster, the vanguard
+    // included, so it stays out in front of the creeps it is leading.
+    const auraSpeed = vanguardAlive ? 1 + VANGUARD_SPEED_BONUS : 1;
+    let remaining = c.speed * auraSpeed * (1 - c.slowFactor) * TILE_SIZE * dt;
     while (remaining > 0 && c.pathIndex < c.path.length) {
       const targetTile = c.path[c.pathIndex]!;
       const tx = targetTile.x * TILE_SIZE + TILE_SIZE / 2;
@@ -440,7 +518,7 @@ export function stepSimulation(
     }
 
     if (c.pathIndex >= c.path.length) {
-      livesLostThisFrame += c.trait === 'boss' ? 3 : 1;
+      livesLostThisFrame += c.trait === 'boss' ? 3 : c.hero ? HERO_LIVES_COST : 1;
       sim.creeps.splice(i, 1);
     }
   }
@@ -614,7 +692,7 @@ export function stepSimulation(
         for (const c of sim.creeps) {
           if (c.hp <= 0 || c.id === target.id) continue;
           if (Math.hypot(c.x - target.x, c.y - target.y) <= totalSplash) {
-            damageCreep(c, dmg * 0.55, { isCrit: false, sourceTowerId: tower.id });
+            damageCreep(c, dmg * 0.55, { isCrit: false, magic: true, sourceTowerId: tower.id });
           }
         }
       } else {
@@ -719,6 +797,8 @@ export function stepSimulation(
         damageCreep(target, p.damage * mult, {
           isCrit: p.isCrit && mult === 1,
           ignoreArmor: p.ignoreArmor,
+          // Splash on anything but the creep the shot was aimed at is magic.
+          magic: target !== liveTarget,
           sourceTowerId: p.sourceTowerId,
         });
       };

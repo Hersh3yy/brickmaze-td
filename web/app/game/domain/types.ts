@@ -74,6 +74,16 @@ export interface Tower {
 
 export type CreepTrait = 'normal' | 'swarm' | 'swift' | 'armored' | 'regen' | 'boss';
 
+/** A hero escorting its wave: the vanguard leads and speeds the wave up, the warden trails and heals it. */
+export type HeroRole = 'vanguard' | 'warden';
+
+/**
+ * A wave-wide special on top of the creep trait.
+ * - rally: every kill makes the rest of the wave tougher.
+ * - escort: a vanguard hero spawns first and a warden hero last.
+ */
+export type WaveModifier = 'rally' | 'escort';
+
 export interface Creep {
   id: string;
   wave: number;
@@ -96,6 +106,8 @@ export interface Creep {
   shredTimer: number;
   animTime: number;
   radius: number;
+  /** Set on the two hero creeps of an escort wave. */
+  hero?: HeroRole;
 }
 
 export interface Projectile {
@@ -232,6 +244,7 @@ export interface WaveDefinition {
   bounty: number;
   spawnInterval: number;
   clearBonus: number;
+  modifier?: WaveModifier;
 }
 
 export interface PlayerStats {

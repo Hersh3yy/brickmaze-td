@@ -536,7 +536,7 @@ function drawPixelTower(
 function drawCreep(ctx: CanvasRenderingContext2D, creep: Creep) {
   const frameIdx: 0 | 1 = Math.floor(creep.animTime * 6) % 2 === 0 ? 0 : 1;
   const sprite = spriteAtlas.getCreep(creep.trait, frameIdx);
-  const drawW = creep.trait === 'boss' ? 30 : creep.trait === 'swarm' ? 18 : 24;
+  const drawW = creep.trait === 'boss' ? 30 : creep.hero ? 28 : creep.trait === 'swarm' ? 18 : 24;
   const drawH = Math.round((sprite.height / sprite.width) * drawW);
   const x = Math.round(creep.x);
   const y = Math.round(creep.y);
@@ -601,7 +601,7 @@ function drawCreep(ctx: CanvasRenderingContext2D, creep: Creep) {
   const barY = spriteTop - 7;
   const hpRatio = Math.max(0, Math.min(1, creep.hp / creep.maxHp));
 
-  if (hpRatio < 1 || creep.trait === 'boss') {
+  if (hpRatio < 1 || creep.trait === 'boss' || creep.hero) {
     ctx.fillStyle = '#0F172A';
     ctx.fillRect(barX - 1, barY - 1, barW + 2, 5);
     ctx.fillStyle = hpRatio > 0.5 ? '#22C55E' : hpRatio > 0.25 ? '#F59E0B' : '#EF4444';
@@ -611,6 +611,26 @@ function drawCreep(ctx: CanvasRenderingContext2D, creep: Creep) {
   if (isShredded) {
     ctx.fillStyle = '#F59E0B';
     ctx.fillRect(barX - 5, barY, 2, 3);
+  }
+
+  // Escort heroes carry a badge beside their HP bar: the vanguard a blue arrow
+  // (it speeds the wave up), the warden a green cross (it heals the wave).
+  if (creep.hero) {
+    const bx = barX + barW + 2;
+    const by = barY - 3;
+    ctx.fillStyle = '#0F172A';
+    ctx.fillRect(bx - 1, by - 1, 9, 9);
+    ctx.fillStyle = creep.hero === 'vanguard' ? '#38BDF8' : '#4ADE80';
+    ctx.fillRect(bx, by, 7, 7);
+    ctx.fillStyle = '#F8FAFC';
+    if (creep.hero === 'vanguard') {
+      ctx.fillRect(bx + 1, by + 3, 4, 1);
+      ctx.fillRect(bx + 3, by + 2, 1, 3);
+      ctx.fillRect(bx + 4, by + 3, 2, 1);
+    } else {
+      ctx.fillRect(bx + 3, by + 1, 1, 5);
+      ctx.fillRect(bx + 1, by + 3, 5, 1);
+    }
   }
 }
 

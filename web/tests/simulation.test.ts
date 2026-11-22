@@ -125,3 +125,52 @@ describe('fresh targeting', () => {
     expect(fireOnce('fresh')).toBe('behind-clean')
   })
 })
+
+describe('wave specials', () => {
+  it('schedules rally every 3rd wave and escorts in between, never on boss waves', () => {
+    expect(getWaveDefinition(3).modifier).toBe('rally')
+    expect(getWaveDefinition(4).modifier).toBe('escort')
+    expect(getWaveDefinition(5).modifier).toBeUndefined()
+    expect(getWaveDefinition(15).modifier).toBeUndefined()
+    expect(getWaveDefinition(2).modifier).toBeUndefined()
+  })
+
+  function startWave(wave: number) {
+    const grid = createInitialGrid('crossroad')
+    const path = computeMazePath(grid, 'crossroad').path
+    const sim = createSimState(path.length)
+    const total = beginWave(sim, wave, 'standard')
+    const world: SimWorld = {
+      grid, phase: 'COMBAT', wave, difficulty: 'standard', endlessMode: false,
+      lives: 20, gold: 0, towers: [], path, speed: 1,
+    }
+    // Spawn the whole wave without anyone shooting.
+    for (let step = 0; step < 60 * 60 && sim.spawnQueueLeft > 0; step++) {
+      stepSimulation(sim, world, 1 / 60, step * 16, {}, mulberry32(3))
+    }
+    return { sim, world, total }
+  }
+
+  it('escort waves add a vanguard first and a warden last, with 4x health', () => {
+    const def = getWaveDefinition(4)
+    const { sim, total } = startWave(4)
+    expect(total).toBe(def.count + 2)
+    const spawnedInOrder = [...sim.creeps].sort((a, b) => b.pathIndex - a.pathIndex)
+    expect(spawnedInOrder[0]!.hero).toBe('vanguard')
+    expect(spawnedInOrder.at(-1)!.hero).toBe('warden')
+    expect(spawnedInOrder[0]!.maxHp).toBe(def.hp * 4)
+  })
+
+  it('rally waves make the rest of the wave 3% tougher per kill', () => {
+    const { sim, world } = startWave(3)
+    const [victim, ...rest] = sim.creeps
+    const before = rest.map((c) => c.maxHp)
+    // Poison the first creep to death on the next step.
+    victim!.hp = 0.01
+    victim!.poisonTimer = 1
+    victim!.poisonDps = 100
+    stepSimulation(sim, world, 1 / 60, 99999, {}, mulberry32(4))
+    rest.forEach((c, i) => expect(c.maxHp).toBeCloseTo(before[i]! * 1.03, 5))
+    expect(sim.rallyMult).toBeCloseTo(1.03, 5)
+  })
+})

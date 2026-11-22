@@ -7,6 +7,7 @@ import {
   DIFFICULTY_DEFS,
   SYNERGY_CATALOG,
   TOWER_DEFS,
+  WAVE_MODIFIER_INFO,
   getWaveDefinition,
 } from '~/game/domain/constants';
 import { tileAppliesDebuff } from '~/game/domain/simulation';
@@ -347,9 +348,16 @@ const isPreBoss = computed(() => props.wave % 5 === 4);
         Wave {{ currentWaveDef.wave }} · {{ currentWaveDef.name }}
       </div>
       <div class="font-mono text-xs text-slate-300 tabular-nums">
-        {{ currentWaveDef.count }}x · {{ currentWaveDef.hp.toLocaleString() }} HP ·
-        {{ Math.round(currentWaveDef.armor * 100) }}% Armor
+        {{ currentWaveDef.count }}x{{ currentWaveDef.modifier === 'escort' ? ' + 2 heroes' : '' }} ·
+        {{ currentWaveDef.hp.toLocaleString() }} HP · {{ Math.round(currentWaveDef.armor * 100) }}% Armor
       </div>
+      <p v-if="currentWaveDef.modifier" class="text-[11px] text-sky-200 leading-snug pt-0.5">
+        <span class="font-semibold text-sky-300">{{ WAVE_MODIFIER_INFO[currentWaveDef.modifier].label }}:</span>
+        {{ WAVE_MODIFIER_INFO[currentWaveDef.modifier].detail }}
+      </p>
+      <p v-if="currentWaveDef.armor > 0" class="text-[11px] text-slate-400 leading-snug">
+        Armor only blocks direct hits. Lightning chains, splash, poison and burn go straight through.
+      </p>
       <p v-if="isBossWave" class="text-[11px] text-rose-200/90 leading-snug pt-0.5">
         Bosses cost 3 lives if leaked. Fortify with Rail Snipers, Fire bursts, or Venom slow!
       </p>
