@@ -116,6 +116,11 @@ export function nextUid(prefix: string): string {
 
 type Point = { x: number; y: number };
 
+// Particles per burst. Kept small: the board is busy and old phones pay for every one.
+const HIT_BURST = 3;
+const KILL_BURST = 5;
+const BOSS_KILL_BURST = 12;
+
 /** Effects that run out within this many seconds count as gone for 'fresh' targeting. */
 const DEBUFF_REFRESH_WINDOW = 0.4;
 
@@ -236,7 +241,7 @@ export function stepSimulation(
         creep.x,
         creep.y,
         creep.trait === 'boss' ? '#F43F5E' : '#F8FAFC',
-        creep.trait === 'boss' ? 18 : 7
+        creep.trait === 'boss' ? BOSS_KILL_BURST : KILL_BURST
       );
     }
   };
@@ -408,7 +413,7 @@ export function stepSimulation(
       sim.totalKills += 1;
       world.gold += c.bounty;
       addFloatingText(c.x, c.y - 8, `+${c.bounty}g`, c.poisonTimer > 0 ? '#4ADE80' : '#FB923C');
-      spawnBurst(c.x, c.y, c.poisonTimer > 0 ? '#10B981' : '#EF4444', 7);
+      spawnBurst(c.x, c.y, c.poisonTimer > 0 ? '#10B981' : '#EF4444', KILL_BURST);
       sim.creeps.splice(i, 1);
       continue;
     }
@@ -605,7 +610,7 @@ export function stepSimulation(
       if (totalSplash > 0) {
         const visSplash = Math.min(36, Math.max(16, totalSplash * 0.45));
         spawnRing(target.x, target.y, visSplash, '#EF4444', 0.16, 0.07);
-        spawnBurst(target.x, target.y, '#FB923C', 5, 60);
+        spawnBurst(target.x, target.y, '#FB923C', HIT_BURST, 60);
         for (const c of sim.creeps) {
           if (c.hp <= 0 || c.id === target.id) continue;
           if (Math.hypot(c.x - target.x, c.y - target.y) <= totalSplash) {
@@ -613,7 +618,7 @@ export function stepSimulation(
           }
         }
       } else {
-        spawnBurst(target.x, target.y, elColor, 6, 80);
+        spawnBurst(target.x, target.y, elColor, HIT_BURST, 80);
       }
 
       if (mods.chainCount > 0) {
@@ -731,10 +736,10 @@ export function stepSimulation(
         }
         const visSplash = Math.min(40, Math.max(18, p.splashRadius * 0.44));
         spawnRing(impactX, impactY, visSplash, p.element === 'red' ? '#F97316' : elColor, 0.16, 0.08);
-        spawnBurst(impactX, impactY, elColor, 6, 65);
+        spawnBurst(impactX, impactY, elColor, HIT_BURST, 65);
       } else if (liveTarget) {
         applyHit(liveTarget, 1);
-        spawnBurst(impactX, impactY, elColor, 4, 58);
+        spawnBurst(impactX, impactY, elColor, HIT_BURST, 58);
         if (p.element === 'green') {
           spawnRing(impactX, impactY, 15, '#34D399', 0.15, 0.08);
         }
