@@ -2,6 +2,23 @@ import type { BrickColor, CreepTrait, HeroRole, TowerType } from '../domain/type
 import { activeWorld } from '../worlds';
 import { refineGrid } from '../worlds/refine';
 import type { AmmoElement, SpriteGrid, WorldDefinition } from '../worlds/types';
+import { bakeVoxelSprite, sculptModel, tonesFrom } from '../worlds/voxel';
+import type { VoxelBuild, VoxelModel } from '../worlds/voxel';
+
+/** A baked voxel sprite and where its ground point and top sit inside the canvas. */
+export interface VoxelSprite {
+  canvas: HTMLCanvasElement;
+  groundX: number;
+  groundY: number;
+  /** Height of the model above its ground point, in canvas pixels. */
+  height: number;
+  /** Muzzle tip relative to the ground point, before rotation (reach, height), if any. */
+  muzzle?: [number, number];
+}
+
+/** Tower aim directions baked per model; creeps get four walking directions. */
+export const VOXEL_TOWER_DIRS = 16;
+const OUTLINE_INK: [number, number, number] = [20, 18, 22];
 
 /**
  * Pixel sprite atlas. The sprite grids and palettes come from the active World
@@ -65,6 +82,8 @@ class PixelSpriteAtlas {
   private heroCache = new Map<HeroRole, [HTMLCanvasElement, HTMLCanvasElement] | null>();
   private projCache = new Map<string, HTMLCanvasElement>();
   private emblemCache = new Map<BrickColor, HTMLCanvasElement>();
+  private voxelModels = new Map<string, VoxelModel>();
+  private voxelSprites = new Map<string, VoxelSprite>();
 
   /** Current World, dropping every cached sprite when it has changed since the last call. */
   private world(): WorldDefinition {
@@ -76,6 +95,8 @@ class PixelSpriteAtlas {
       this.heroCache.clear();
       this.projCache.clear();
       this.emblemCache.clear();
+      this.voxelModels.clear();
+      this.voxelSprites.clear();
     }
     return world;
   }
@@ -99,6 +120,8 @@ class PixelSpriteAtlas {
 
   public getTurret(type: TowerType, element: AmmoElement): HTMLCanvasElement {
     const world = this.world();
+    // A 3D World's shop icon is its tower turned a little towards the viewer.
+    if (world.sprites.voxels) return this.getVoxelTower(type, element, 1)!.canvas;
     const key = `${type}:${element}`;
     const existing = this.turretCache.get(key);
     if (existing) return existing;
@@ -138,6 +161,69 @@ class PixelSpriteAtlas {
       this.heroCache.set(role, pair);
     }
     return pair ? pair[frameIndex] : null;
+  }
+
+  /** Whether the active World draws towers and creeps from voxel models. */
+  public hasVoxels(): boolean {
+    return Boolean(this.world().sprites.voxels);
+  }
+
+  /** A tower baked facing one of VOXEL_TOWER_DIRS directions (0 = right, clockwise). */
+  public getVoxelTower(type: TowerType, element: AmmoElement, dir: number): VoxelSprite | null {
+    const set = this.world().sprites.voxels;
+    if (!set) return null;
+    const d = ((dir % VOXEL_TOWER_DIRS) + VOXEL_TOWER_DIRS) % VOXEL_TOWER_DIRS;
+    return this.bakeVoxel(`t:${type}:${element}:${d}`, `t:${type}`, set.towers[type], 0, (d * Math.PI * 2) / VOXEL_TOWER_DIRS, element);
+  }
+
+  /** A creep or escort hero baked walking right (0), down (1), left (2) or up (3). */
+  public getVoxelCreep(trait: CreepTrait, hero: HeroRole | undefined, dir: number, frame: 0 | 1): VoxelSprite | null {
+    const set = this.world().sprites.voxels;
+    if (!set) return null;
+    const heroBuild = hero ? set.heroes?.[hero] : undefined;
+    const name = heroBuild ? `h:${hero}` : `c:${trait}`;
+    const build = heroBuild ?? set.creeps[trait];
+    return this.bakeVoxel(`${name}:${dir}:${frame}`, `${name}:${frame}`, build, frame, (dir * Math.PI) / 2, 'kinetic');
+  }
+
+  private bakeVoxel(
+    key: string,
+    modelKey: string,
+    build: VoxelBuild,
+    frame: 0 | 1,
+    angle: number,
+    element: AmmoElement
+  ): VoxelSprite {
+    const cached = this.voxelSprites.get(key);
+    if (cached) return cached;
+    const world = this.world();
+    const set = world.sprites.voxels!;
+    const detail = set.detail * (build.scale ?? 1);
+    let model = this.voxelModels.get(modelKey);
+    if (!model) {
+      model = sculptModel(build, detail, frame);
+      this.voxelModels.set(modelKey, model);
+    }
+    const [w, d, h] = build.size;
+    const reach = Math.max(w, d) * detail;
+    const size = Math.ceil(Math.max(reach + 4, h * detail + reach * 0.5 + 6));
+    const groundY = Math.floor(size - reach * 0.25 - 3);
+    const shades = world.sprites.elements[element];
+    const materials = { ...set.materials, C: tonesFrom(shades.l, shades.c, shades.d) };
+    const canvas = bakeVoxelSprite(model, angle, materials, {
+      size,
+      ground: groundY / size,
+      outline: OUTLINE_INK,
+    });
+    const sprite: VoxelSprite = {
+      canvas,
+      groundX: size / 2,
+      groundY,
+      height: h * detail,
+      muzzle: build.muzzle ? [build.muzzle[0] * detail, build.muzzle[1] * detail] : undefined,
+    };
+    this.voxelSprites.set(key, sprite);
+    return sprite;
   }
 
   /** Whether turrets are side views that mirror to face a target instead of rotating. */

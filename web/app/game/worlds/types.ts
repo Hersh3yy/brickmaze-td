@@ -19,6 +19,8 @@ import type {
  * once into offscreen canvases (at 2x), so a World costs nothing per frame.
  */
 
+import type { MaterialMap, VoxelBuild } from './voxel';
+
 export type PaletteMap = Record<string, string>;
 export type SpriteGrid = string[];
 export type AmmoElement = BrickColor | 'kinetic';
@@ -111,6 +113,22 @@ export interface WorldSprites {
   /** 7x8 emblems pressed into coloured bricks ('x' = filled), one shape per element. */
   emblems: Record<BrickColor, SpriteGrid>;
   elements: Record<AmmoElement, ElementShades>;
+  /** Optional 3D models; see VoxelSet. The pixel grids above stay as the fallback. */
+  voxels?: VoxelSet;
+}
+
+/**
+ * Voxel models for a World that draws in 3D. When present they replace the pixel-grid
+ * turrets and creeps: towers are baked in 16 aim directions, creeps in 4 walking
+ * directions with 2 walk frames. Material 'C' is filled in from the element colour.
+ */
+export interface VoxelSet {
+  /** Voxels per design unit. Higher is sharper and slower to bake (bakes happen once). */
+  detail: number;
+  materials: MaterialMap;
+  towers: Record<TowerType, VoxelBuild>;
+  creeps: Record<CreepTrait, VoxelBuild>;
+  heroes?: Record<HeroRole, VoxelBuild>;
 }
 
 export interface WorldDefinition {

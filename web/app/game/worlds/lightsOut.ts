@@ -1,3 +1,4 @@
+import { lightsOutVoxels } from './lightsOutVoxels';
 import type { PaletteMap, SpriteGrid, WorldDefinition, WorldSprites } from './types';
 import {
   HERO_LIVES_COST,
@@ -42,6 +43,7 @@ const sprites: WorldSprites = {
   detail: 'scale2x',
   creepFacing: 'side',
   turretView: 'face',
+  voxels: lightsOutVoxels,
   elements: {
     kinetic: { c: '#C9A27E', l: '#EBD3B5', d: '#8A6544' },
     yellow: { c: '#F5B82E', l: '#FDE68A', d: '#B7791F' },

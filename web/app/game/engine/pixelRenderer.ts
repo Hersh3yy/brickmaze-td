@@ -29,7 +29,7 @@ import type {
 import { computeTileModifiers } from '../domain/synergy';
 import { activeWorld } from '../worlds';
 import type { BoardLook } from '../worlds/types';
-import { spriteAtlas } from './spriteAtlas';
+import { spriteAtlas, VOXEL_TOWER_DIRS } from './spriteAtlas';
 
 export interface CameraView {
   zoom: number; // 1.0 .. 2.2
@@ -420,6 +420,17 @@ function drawBrickTile(
   ctx.fillRect(x + 2, y + 2, w - 4, 2);
   ctx.fillRect(x + 2, y + 2, 2, isBlock ? h - 7 : h - 5);
 
+  if (isBlock) {
+    // Front face of the raised block: the body colour in shadow, with one joint line.
+    ctx.fillStyle = bodyHex;
+    ctx.globalAlpha = (opts?.alpha ?? 1) * 0.5;
+    ctx.fillRect(x + 2, y + h - 5, w - 4, 4);
+    ctx.globalAlpha = (opts?.alpha ?? 1) * 0.35;
+    ctx.fillStyle = darkHex;
+    ctx.fillRect(x + 6, y + h - 3, w - 12, 1);
+    ctx.globalAlpha = opts?.alpha ?? 1;
+  }
+
   if (opts?.grain) {
     ctx.fillStyle = darkHex;
     ctx.globalAlpha = (opts.alpha ?? 1) * 0.5;
@@ -572,6 +583,33 @@ function drawPixelTower(
   // brick under it already show the element, and the pulse was noise across the board.)
 
   const kick = tower.type === 'pulse' ? 0 : Math.round(tower.recoil * 3.5);
+
+  if (spriteAtlas.hasVoxels()) {
+    // 3D figure baked in 16 aim directions; it stands on the lower part of its tile and
+    // may rise above the tile, so towers are drawn top row first (see renderArenaFrame).
+    const dir = tower.type === 'pulse' ? 2 : Math.round(tower.angle / (Math.PI / 8));
+    const v = spriteAtlas.getVoxelTower(tower.type, element, dir)!;
+    const gx = cx - Math.round(Math.cos(tower.angle) * kick);
+    const gy = cy + 7 - Math.round(Math.sin(tower.angle) * kick * 0.5);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
+    ctx.beginPath();
+    ctx.ellipse(cx + 1, cy + 8, 12, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.drawImage(v.canvas, Math.round(gx - v.groundX), Math.round(gy - v.groundY));
+    if (tower.muzzleFlash > 0 && v.muzzle) {
+      const snapped = (Math.round(tower.angle / (Math.PI / 8)) * Math.PI) / 8;
+      const mx = Math.round(gx + Math.cos(snapped) * v.muzzle[0]);
+      const my = Math.round(gy + Math.sin(snapped) * v.muzzle[0] * 0.5 - v.muzzle[1]);
+      ctx.fillStyle = element === 'kinetic' ? '#FEF08A' : BRICK_COLORS[element].lightHex;
+      ctx.fillRect(mx - 3, my - 3, 6, 6);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(mx - 1, my - 1, 3, 3);
+    }
+    ctx.restore();
+    drawLevelPips(ctx, tower);
+    return;
+  }
+
   ctx.translate(cx, cy);
   if (spriteAtlas.turretsFace()) {
     // Side-view figure: stands still, mirrors to face targets on the left, and sits two
@@ -594,8 +632,10 @@ function drawPixelTower(
   }
 
   ctx.restore();
+  drawLevelPips(ctx, tower);
+}
 
-  // Level pips
+function drawLevelPips(ctx: CanvasRenderingContext2D, tower: Tower) {
   for (let lv = 0; lv < tower.level; lv++) {
     const lx = tower.x * TILE_SIZE + 6 + lv * 8;
     const ly = tower.y * TILE_SIZE + TILE_SIZE - 6;
@@ -604,6 +644,53 @@ function drawPixelTower(
     ctx.fillStyle = tower.level === 3 ? '#FDE047' : '#F8FAFC';
     ctx.fillRect(lx, ly, 4, 3);
   }
+}
+
+/**
+ * Voxel sprites bake on first use (about 2 ms each on a laptop, maybe ten times that on an
+ * old phone). Between waves, bake what the next wave will need a few milliseconds per
+ * frame: every aim direction of the towers on the board, and every creep in all walking
+ * directions, so the wave itself never waits on a bake.
+ */
+const CREEP_TRAITS: Creep['trait'][] = ['normal', 'swarm', 'armored', 'swift', 'regen', 'boss'];
+let voxelWarmKey = -1;
+function warmVoxelSprites(frame: RenderFrameInput, key: number, budgetMs = 3) {
+  if (key === voxelWarmKey) return;
+  const start = performance.now();
+  const spent = () => performance.now() - start > budgetMs;
+  for (const tower of frame.towers) {
+    const element = towerElement(frame, tower);
+    for (let d = 0; d < VOXEL_TOWER_DIRS; d++) {
+      spriteAtlas.getVoxelTower(tower.type, element, d);
+      if (spent()) return;
+    }
+  }
+  for (const hero of [undefined, 'vanguard', 'warden'] as const) {
+    for (const trait of hero ? (['normal'] as const) : CREEP_TRAITS) {
+      for (let d = 0; d < 4; d++) {
+        spriteAtlas.getVoxelCreep(trait, hero, d, 0);
+        spriteAtlas.getVoxelCreep(trait, hero, d, 1);
+        if (spent()) return;
+      }
+    }
+  }
+  voxelWarmKey = key;
+}
+
+/** Last walking direction (0 right, 1 down, 2 left, 3 up) per creep, kept while it pauses. */
+const creepDirs = new WeakMap<Creep, number>();
+
+/** Which of four directions a 3D creep faces, from the waypoint it is walking to. */
+function creepDir4(creep: Creep): number {
+  const target = creep.path[creep.pathIndex];
+  if (target) {
+    const dx = target.x * TILE_SIZE + TILE_SIZE / 2 - creep.x;
+    const dy = target.y * TILE_SIZE + TILE_SIZE / 2 - creep.y;
+    if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+      creepDirs.set(creep, Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 0 : 2) : dy > 0 ? 1 : 3);
+    }
+  }
+  return creepDirs.get(creep) ?? 0;
 }
 
 /** Side-view creeps face their walking direction; on vertical legs they keep the last one. */
@@ -619,9 +706,16 @@ function creepWalksLeft(creep: Creep): boolean {
 
 function drawCreep(ctx: CanvasRenderingContext2D, creep: Creep) {
   const frameIdx: 0 | 1 = Math.floor(creep.animTime * 6) % 2 === 0 ? 0 : 1;
-  const sprite = (creep.hero && spriteAtlas.getHero(creep.hero, frameIdx)) || spriteAtlas.getCreep(creep.trait, frameIdx);
-  const drawW = creep.trait === 'boss' ? 30 : creep.hero ? 28 : creep.trait === 'swarm' ? 18 : 24;
-  const drawH = Math.round((sprite.height / sprite.width) * drawW);
+  const voxel = spriteAtlas.hasVoxels()
+    ? spriteAtlas.getVoxelCreep(creep.trait, creep.hero, creepDir4(creep), frameIdx)
+    : null;
+  const sprite = voxel
+    ? voxel.canvas
+    : (creep.hero && spriteAtlas.getHero(creep.hero, frameIdx)) || spriteAtlas.getCreep(creep.trait, frameIdx);
+  const pixelW = creep.trait === 'boss' ? 30 : creep.hero ? 28 : creep.trait === 'swarm' ? 18 : 24;
+  // A voxel creep's footprint is about 60% of its canvas; its drawn height is the model's.
+  const drawW = voxel ? Math.round(sprite.width * 0.6) : pixelW;
+  const drawH = voxel ? Math.round(voxel.height + 3) : Math.round((sprite.height / sprite.width) * drawW);
   const x = Math.round(creep.x);
   const y = Math.round(creep.y);
 
@@ -644,16 +738,23 @@ function drawCreep(ctx: CanvasRenderingContext2D, creep: Creep) {
     ctx.lineWidth = isHeavySlow ? 2 : 1.5;
     ctx.stroke();
     ctx.restore();
+  } else if (voxel) {
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath();
+    ctx.ellipse(x, y + 5, Math.round(drawW * 0.45), Math.round(drawW * 0.2), 0, 0, Math.PI * 2);
+    ctx.fill();
   } else {
     // Standard soft ground shadow
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillRect(x - Math.floor(drawW * 0.35), y + Math.floor(drawH * 0.3), Math.floor(drawW * 0.7), 4);
   }
 
-  // Blit crisp pixel-art animated creep sprite
+  // Blit the creep: a voxel sprite stands on its ground point; a pixel sprite is centred.
   const spriteLeft = Math.round(x - drawW / 2);
-  const spriteTop = Math.round(y - drawH / 2);
-  if (spriteAtlas.creepsFaceSideways() && creepWalksLeft(creep)) {
+  const spriteTop = voxel ? Math.round(y + 5 - drawH) : Math.round(y - drawH / 2);
+  if (voxel) {
+    ctx.drawImage(sprite, Math.round(x - voxel.groundX), Math.round(y + 5 - voxel.groundY));
+  } else if (spriteAtlas.creepsFaceSideways() && creepWalksLeft(creep)) {
     ctx.save();
     ctx.translate(spriteLeft + drawW, spriteTop);
     ctx.scale(-1, 1);
@@ -797,6 +898,10 @@ export function renderArenaFrame(ctx: CanvasRenderingContext2D, frame: RenderFra
   if (g !== gridHash) {
     gridHash = g;
     rebuildGridDerived(frame);
+  }
+
+  if (frame.phase !== 'COMBAT' && spriteAtlas.hasVoxels()) {
+    warmVoxelSprites(frame, mix(g, hashText(activeWorld().id)));
   }
 
   // 1. Floor + bricks from the cached board layer (repainted only when something changed)
@@ -1050,8 +1155,12 @@ export function renderArenaFrame(ctx: CanvasRenderingContext2D, frame: RenderFra
     ctx.restore();
   }
 
-  // 9. Element-Infused Weapon Turrets
-  for (const tower of frame.towers) {
+  // 9. Element-Infused Weapon Turrets. 3D figures rise above their tile, so draw the
+  // top rows first and let lower towers overlap the ones behind them.
+  const towerOrder = spriteAtlas.hasVoxels()
+    ? [...frame.towers].sort((a, b) => a.y - b.y || a.x - b.x)
+    : frame.towers;
+  for (const tower of towerOrder) {
     const isSel =
       frame.selectedCoord?.x === tower.x && frame.selectedCoord?.y === tower.y;
     const isReloc = frame.relocatingTowerId === tower.id;
