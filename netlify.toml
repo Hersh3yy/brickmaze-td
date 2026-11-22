@@ -1,0 +1,14 @@
+# The game is a static site: Netlify builds web/ and serves the generated files.
+[build]
+  base = "web"
+  command = "npm run generate"
+  publish = ".output/public"
+
+[build.environment]
+  NODE_VERSION = "24"
+
+# Unknown paths fall back to the app shell so client-side routes still load.
+[[redirects]]
+  from = "/*"
+  to = "/200.html"
+  status = 200

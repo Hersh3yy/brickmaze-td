@@ -1,0 +1,6 @@
+{
+  "name": "BrickMaze TD",
+  "description": "A tactile pixel-art mazing tower defense game inspired by Gem TD. Draft 4 colored bricks per turn, sculpt multi-checkpoint mazes, fuse color synergies, and freely relocate turrets between waves.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

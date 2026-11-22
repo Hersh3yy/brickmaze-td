@@ -1,0 +1,7 @@
+.DS_Store
+# The AI Studio download; its unpacked copy lives in untitled/
+untitled.zip
+node_modules
+.env
+.env.*
+!.env.example
