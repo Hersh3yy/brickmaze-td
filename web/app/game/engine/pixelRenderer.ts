@@ -535,12 +535,26 @@ export function renderArenaFrame(ctx: CanvasRenderingContext2D, frame: RenderFra
             glyph: meta.glyph,
           });
           if (frame.phase === 'BUILD_PICK') {
-            const pulse = 0.55 + 0.45 * Math.sin(frame.nowSec * 6.5);
+            // Nothing chosen yet: all four pulse. One chosen: it gets a steady outline and
+            // the others dim, since they are the ones that will harden into gray walls.
+            const sel = frame.selectedCoord;
+            const draftChosen =
+              sel !== null && frame.grid[sel.y]?.[sel.x]?.kind === 'TURN_DRAFT';
+            const isChosen = draftChosen && sel!.x === cell.x && sel!.y === cell.y;
             ctx.save();
-            ctx.strokeStyle = '#FDE047';
-            ctx.globalAlpha = pulse;
-            ctx.lineWidth = 3;
-            ctx.strokeRect(px + 1.5, py + 1.5, TILE_SIZE - 3, TILE_SIZE - 3);
+            if (isChosen) {
+              ctx.strokeStyle = '#F8FAFC';
+              ctx.lineWidth = 3;
+              ctx.strokeRect(px + 1.5, py + 1.5, TILE_SIZE - 3, TILE_SIZE - 3);
+            } else if (draftChosen) {
+              ctx.fillStyle = 'rgba(15, 23, 42, 0.5)';
+              ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+            } else {
+              ctx.strokeStyle = '#FDE047';
+              ctx.globalAlpha = 0.55 + 0.45 * Math.sin(frame.nowSec * 6.5);
+              ctx.lineWidth = 3;
+              ctx.strokeRect(px + 1.5, py + 1.5, TILE_SIZE - 3, TILE_SIZE - 3);
+            }
             ctx.restore();
           }
           break;

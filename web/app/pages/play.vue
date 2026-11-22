@@ -20,6 +20,7 @@ const {
   rerollsRemaining,
   draftQueue,
   placedTurnCoords,
+  pickIndex,
   mobileInspectorOpen,
   placingTowerType,
   relocatingTowerId,
@@ -37,11 +38,13 @@ const {
   frame,
   rerollDraft,
   undoLastBrick,
-  pickTurnBrick,
+  selectDraftBrick,
+  keepSelectedBrick,
   fuseTurnPair,
   clearGrayBrick,
   sendWave,
   selectTowerType,
+  placeTowerOnSelected,
   upgradeTower,
   sellTower,
   changeTargeting,
@@ -121,6 +124,7 @@ function exitToLobby() {
         @sell-tower="sellTower"
         @change-targeting="changeTargeting"
         @clear-gray-brick="clearGrayBrick"
+        @place-tower="placeTowerOnSelected"
         @close-mobile="mobileInspectorOpen = false"
       />
     </template>
@@ -131,6 +135,7 @@ function exitToLobby() {
         :draft-queue="draftQueue"
         :placed-turn-coords="placedTurnCoords"
         :rerolls-remaining="rerollsRemaining"
+        :pick-index="pickIndex"
         :fusion-options="fusionOptions"
         :gold="gold"
         :placing-tower-type="placingTowerType"
@@ -138,7 +143,8 @@ function exitToLobby() {
         :wave-total-creeps="waveTotalCreepsUi"
         @reroll-draft="rerollDraft"
         @undo-last-brick="undoLastBrick"
-        @pick-turn-brick="pickTurnBrick"
+        @select-draft-brick="selectDraftBrick"
+        @keep-selected-brick="keepSelectedBrick"
         @fuse-turn-pair="fuseTurnPair"
         @select-tower-type="selectTowerType"
       />

@@ -14,6 +14,9 @@ const props = defineProps<{
   draftQueue: BrickColor[];
   placedTurnCoords: PlacedTurnEntry[];
   rerollsRemaining: number;
+  /** BUILD_PICK: index of the draft brick being looked at, or null. */
+  pickIndex: number | null;
+  /** BUILD_PICK: fusions that keep the selected brick as the Master brick. */
   fusionOptions: TurnFusionOption[];
   gold: number;
   placingTowerType: TowerType | null;
@@ -24,7 +27,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   rerollDraft: [];
   undoLastBrick: [];
-  pickTurnBrick: [index: number];
+  selectDraftBrick: [index: number];
+  keepSelectedBrick: [];
   fuseTurnPair: [option: TurnFusionOption];
   selectTowerType: [type: TowerType];
 }>();
@@ -84,7 +88,8 @@ function slotState(idx: number): 'placed' | 'next' | 'queued' {
         :index="idx"
         :color="color"
         state="pickable"
-        @pick="emit('pickTurnBrick', idx)"
+        :selected="pickIndex === idx"
+        @pick="emit('selectDraftBrick', idx)"
       />
     </div>
 
@@ -93,18 +98,33 @@ function slotState(idx: number): 'placed' | 'next' | 'queued' {
         <Undo2 class="w-3.5 h-3.5" />
         <span>Undo</span>
       </TactileButton>
-      <TactileButton
-        v-for="opt in fusionOptions.slice(0, 2)"
-        :key="opt.id"
-        variant="amber"
-        size="sm"
-        :title="opt.description"
-        @click="emit('fuseTurnPair', opt)"
-      >
-        <Sparkles class="w-3.5 h-3.5" />
-        <BrickColorGlyph :color="opt.colors[0]" :secondary-color="opt.colors[1]" size="sm" />
-        <span>Fuse: {{ opt.name }}</span>
-      </TactileButton>
+
+      <span v-if="pickIndex === null" class="text-xs text-slate-400">
+        Click one of your 4 bricks (board or list) to choose where it stays
+      </span>
+      <template v-else>
+        <TactileButton
+          variant="secondary"
+          size="sm"
+          title="Keep this brick as a single colour (Enter)"
+          @click="emit('keepSelectedBrick')"
+        >
+          <BrickColorGlyph :color="draftQueue[pickIndex]!" size="sm" />
+          <span>Keep here</span>
+        </TactileButton>
+        <TactileButton
+          v-for="opt in fusionOptions"
+          :key="opt.id"
+          variant="amber"
+          size="sm"
+          :title="opt.description"
+          @click="emit('fuseTurnPair', opt)"
+        >
+          <Sparkles class="w-3.5 h-3.5" />
+          <BrickColorGlyph :color="opt.colors[0]" :secondary-color="opt.colors[1]" size="sm" />
+          <span>Fuse here: {{ opt.name }}</span>
+        </TactileButton>
+      </template>
     </div>
   </footer>
 

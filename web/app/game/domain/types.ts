@@ -14,7 +14,9 @@ export type CellKind =
 
 export type TowerType = 'repeater' | 'cannon' | 'sniper' | 'pulse';
 
-export type TargetingMode = 'first' | 'strongest' | 'closest';
+// 'fresh' = like 'first', but prefers creeps that do not already carry this tower's
+// slow / poison / burn, so effect towers spread their debuffs instead of stacking them.
+export type TargetingMode = 'first' | 'strongest' | 'closest' | 'fresh';
 
 export type GamePhase =
   | 'BUILD_PLACE'

@@ -23,15 +23,13 @@ import { computeMazePath, createInitialGrid, isBrickCell } from '~/game/domain/p
 import {
   beginWave,
   createSimState,
+  defaultTargetingFor,
   nextUid,
   resetSimState,
   stepSimulation,
 } from '~/game/domain/simulation';
 import type { SimEvents, SimWorld } from '~/game/domain/simulation';
-import {
-  computeBoardSynergyLinks,
-  findTurnFusionOptions,
-} from '~/game/domain/synergy';
+import { computeBoardSynergyLinks, findFusionOptionsForBrick } from '~/game/domain/synergy';
 import type {
   BrickColor,
   Coord,
@@ -91,6 +89,8 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
   const rerollsRemaining = ref(2 + perks.value.bonusRerolls);
   const draftQueue = shallowRef<BrickColor[]>(rollFourBricks());
   const placedTurnCoords = shallowRef<PlacedTurnEntry[]>([]);
+  /** In BUILD_PICK: the draft brick the player is looking at (index into placedTurnCoords). */
+  const pickIndex = ref<number | null>(null);
   const towers = shallowRef<Tower[]>([]);
   const selectedCoord = shallowRef<Coord | null>(null);
   const mobileInspectorOpen = ref(false);
@@ -105,8 +105,11 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
 
   const pathResult = computed(() => computeMazePath(grid.value, mapLayout));
   const synergyLinks = computed(() => computeBoardSynergyLinks(grid.value));
+  /** Fusions that would keep the currently selected draft brick as the Master brick. */
   const fusionOptions = computed(() =>
-    phase.value === 'BUILD_PICK' ? findTurnFusionOptions(grid.value, placedTurnCoords.value) : []
+    phase.value === 'BUILD_PICK' && pickIndex.value !== null
+      ? findFusionOptionsForBrick(grid.value, placedTurnCoords.value, pickIndex.value)
+      : []
   );
 
   const hoverPreview = computed<{
@@ -337,6 +340,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     nextGrid[last.y]![last.x] = { x: last.x, y: last.y, kind: last.previousKind };
     grid.value = nextGrid;
     placedTurnCoords.value = placed.slice(0, -1);
+    pickIndex.value = null;
     if (phase.value === 'BUILD_PICK') phase.value = 'BUILD_PLACE';
     soundEngine.playSell();
   }
@@ -368,16 +372,29 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
 
     grid.value = nextGrid;
     placedTurnCoords.value = [];
+    pickIndex.value = null;
     selectedCoord.value = { x: keepEntry.x, y: keepEntry.y };
     phase.value = 'BUILD_MANAGE';
     return true;
   }
 
-  function pickTurnBrick(keepIndex: number) {
+  /** BUILD_PICK step 1: look at one draft brick. Nothing is decided until keep or fuse. */
+  function selectDraftBrick(index: number) {
     if (phase.value !== 'BUILD_PICK') return;
-    if (resolveDraft(keepIndex)) soundEngine.playKeepBrick();
+    const entry = placedTurnCoords.value[index];
+    if (!entry) return;
+    pickIndex.value = index;
+    selectedCoord.value = { x: entry.x, y: entry.y };
+    soundEngine.playBrickSnap();
   }
 
+  /** BUILD_PICK step 2a: keep the selected brick as a single-colour brick. */
+  function keepSelectedBrick() {
+    if (phase.value !== 'BUILD_PICK' || pickIndex.value === null) return;
+    if (resolveDraft(pickIndex.value)) soundEngine.playKeepBrick();
+  }
+
+  /** BUILD_PICK step 2b: fuse a partner into the selected brick, which stays where it is. */
   function fuseTurnPair(option: TurnFusionOption) {
     if (phase.value !== 'BUILD_PICK') return;
     if (resolveDraft(option.anchorIndex, option)) soundEngine.playFuseMaster();
@@ -418,6 +435,48 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
   function selectTowerType(type: TowerType) {
     relocatingTowerId.value = null;
     placingTowerType.value = placingTowerType.value === type ? null : type;
+  }
+
+  /** Mounts a new weapon on a brick or gray wall. Returns false when it cannot. */
+  function placeTowerAt(coord: Coord, type: TowerType): boolean {
+    if (phase.value !== 'BUILD_MANAGE' && phase.value !== 'COMBAT') return false;
+    const cell = grid.value[coord.y]?.[coord.x];
+    if (!cell || !isBrickCell(cell)) return false;
+    if (towers.value.some((t) => t.x === coord.x && t.y === coord.y)) return false;
+
+    const def = TOWER_DEFS[type];
+    if (gold.value < def.cost) {
+      soundEngine.playInvalid();
+      return false;
+    }
+
+    const newTower: Tower = {
+      id: nextUid('tw'),
+      type,
+      level: 1,
+      x: coord.x,
+      y: coord.y,
+      targeting: defaultTargetingFor(grid.value, coord.x, coord.y),
+      angle: 0,
+      cooldown: 0,
+      recoil: 0,
+      muzzleFlash: 0,
+      totalDamage: 0,
+      kills: 0,
+      investedGold: def.cost,
+    };
+    gold.value -= def.cost;
+    towers.value = [...towers.value, newTower];
+    selectedCoord.value = { x: coord.x, y: coord.y };
+    placingTowerType.value = null;
+    soundEngine.playPlaceTower();
+    return true;
+  }
+
+  /** Used by the inspector's "mount a weapon" buttons for the selected brick. */
+  function placeTowerOnSelected(type: TowerType) {
+    const coord = selectedCoord.value;
+    if (coord) placeTowerAt(coord, type);
   }
 
   function upgradeTower(towerId: string) {
@@ -504,7 +563,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
 
     if (phase.value === 'BUILD_PICK') {
       if (cell.kind === 'TURN_DRAFT' && cell.turnDraftIndex !== undefined) {
-        pickTurnBrick(cell.turnDraftIndex);
+        selectDraftBrick(cell.turnDraftIndex);
         return;
       }
       selectedCoord.value = coord;
@@ -514,9 +573,17 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     if (relocatingTowerId.value && phase.value !== 'COMBAT') {
       const movingId = relocatingTowerId.value;
       if (isBrickCell(cell) && !existingTower) {
-        towers.value = towers.value.map((t) =>
-          t.id === movingId ? { ...t, x: coord.x, y: coord.y } : t
-        );
+        // A tower still on its default targeting picks up the default of its new tile.
+        towers.value = towers.value.map((t) => {
+          if (t.id !== movingId) return t;
+          const wasDefault = t.targeting === defaultTargetingFor(grid.value, t.x, t.y);
+          return {
+            ...t,
+            x: coord.x,
+            y: coord.y,
+            targeting: wasDefault ? defaultTargetingFor(grid.value, coord.x, coord.y) : t.targeting,
+          };
+        });
         relocatingTowerId.value = null;
         selectedCoord.value = coord;
         soundEngine.playRelocate();
@@ -531,35 +598,8 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     }
 
     const placingType = placingTowerType.value;
-    if (placingType && (phase.value === 'BUILD_MANAGE' || phase.value === 'COMBAT')) {
-      if (isBrickCell(cell) && !existingTower) {
-        const def = TOWER_DEFS[placingType];
-        if (gold.value < def.cost) {
-          soundEngine.playInvalid();
-          return;
-        }
-        const newTower: Tower = {
-          id: nextUid('tw'),
-          type: placingType,
-          level: 1,
-          x: coord.x,
-          y: coord.y,
-          targeting: 'first',
-          angle: 0,
-          cooldown: 0,
-          recoil: 0,
-          muzzleFlash: 0,
-          totalDamage: 0,
-          kills: 0,
-          investedGold: def.cost,
-        };
-        gold.value -= def.cost;
-        towers.value = [...towers.value, newTower];
-        selectedCoord.value = coord;
-        placingTowerType.value = null;
-        soundEngine.playPlaceTower();
-        return;
-      }
+    if (placingType && !existingTower && isBrickCell(cell)) {
+      if (placeTowerAt(coord, placingType)) return;
     }
 
     selectedCoord.value = coord;
@@ -611,6 +651,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     rerollsRemaining.value = 2 + perks.value.bonusRerolls;
     draftQueue.value = rollFourBricks();
     placedTurnCoords.value = [];
+    pickIndex.value = null;
     towers.value = [];
     selectedCoord.value = null;
     mobileInspectorOpen.value = false;
@@ -639,6 +680,10 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     } else if (e.key.toLowerCase() === 'm' && phase.value !== 'COMBAT' && selected) {
       const t = towers.value.find((tw) => tw.x === selected.x && tw.y === selected.y);
       if (t) startRelocate(t.id);
+    } else if (phase.value === 'BUILD_PICK') {
+      const idx = Number(e.key) - 1;
+      if (idx >= 0 && idx < BRICKS_PER_TURN) selectDraftBrick(idx);
+      else if (e.key === 'Enter') keepSelectedBrick();
     } else if (phase.value === 'BUILD_MANAGE' || phase.value === 'COMBAT') {
       const type = TOWER_LIST[Number(e.key) - 1];
       if (type) selectTowerType(type);
@@ -667,6 +712,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     rerollsRemaining,
     draftQueue,
     placedTurnCoords,
+    pickIndex,
     towers,
     selectedCoord,
     mobileInspectorOpen,
@@ -689,11 +735,13 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     // actions
     rerollDraft,
     undoLastBrick,
-    pickTurnBrick,
+    selectDraftBrick,
+    keepSelectedBrick,
     fuseTurnPair,
     clearGrayBrick,
     sendWave,
     selectTowerType,
+    placeTowerOnSelected,
     upgradeTower,
     sellTower,
     changeTargeting,

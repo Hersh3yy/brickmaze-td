@@ -28,7 +28,7 @@ const status = computed(() => {
         break;
       case 'BUILD_PICK':
         title = 'Keep 1 Brick or Fuse';
-        detail = 'Others harden into gray walls';
+        detail = 'Click a brick, then keep it or fuse into it · others turn gray';
         accent = 'text-sky-300';
         break;
       case 'BUILD_MANAGE':

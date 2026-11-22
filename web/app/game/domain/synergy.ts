@@ -269,51 +269,55 @@ export function computeTileModifiers(
   return mod;
 }
 
-export function findTurnFusionOptions(
+/**
+ * Fusion choices for one of this turn's bricks. The chosen brick (`anchorIndex`) is the
+ * one that stays on the board as the fused Master brick; its partner hardens to gray
+ * like the other two. Partners of the same colour give the same result, so each
+ * partner colour is listed once.
+ */
+export function findFusionOptionsForBrick(
   grid: GridCell[][],
-  placedTurnCoords: PlacedTurnEntry[]
+  placedTurnCoords: PlacedTurnEntry[],
+  anchorIndex: number
 ): TurnFusionOption[] {
+  const anchorEntry = placedTurnCoords[anchorIndex];
+  const anchorColor = anchorEntry ? grid[anchorEntry.y]?.[anchorEntry.x]?.color : undefined;
+  if (!anchorColor) return [];
+
   const options: TurnFusionOption[] = [];
-  const seenSignatures = new Set<string>();
+  const seenPartnerColors = new Set<BrickColor>();
 
-  for (let i = 0; i < placedTurnCoords.length; i++) {
-    const cellA = grid[placedTurnCoords[i].y]?.[placedTurnCoords[i].x];
-    if (!cellA?.color) continue;
+  placedTurnCoords.forEach((entry, partnerIndex) => {
+    if (partnerIndex === anchorIndex) return;
+    const partnerColor = grid[entry.y]?.[entry.x]?.color;
+    if (!partnerColor || seenPartnerColors.has(partnerColor)) return;
 
-    for (let j = i + 1; j < placedTurnCoords.length; j++) {
-      const cellB = grid[placedTurnCoords[j].y]?.[placedTurnCoords[j].x];
-      if (!cellB?.color) continue;
+    const syn = matchColorPairSynergy(anchorColor, partnerColor);
+    if (!syn) return;
+    seenPartnerColors.add(partnerColor);
 
-      const syn = matchColorPairSynergy(cellA.color, cellB.color);
-      if (!syn) continue;
+    const elA = BRICK_COLORS[anchorColor].elementName;
+    const elB = BRICK_COLORS[partnerColor].elementName;
+    const isTwin = anchorColor === partnerColor;
 
-      const sig = `${syn.id}:${pairKey(cellA.color, cellB.color)}`;
-      if (seenSignatures.has(sig)) continue;
-      seenSignatures.add(sig);
+    const twinDetail =
+      anchorColor === 'green'
+        ? '56% Slow + 2× Corrosive DoT'
+        : anchorColor === 'red'
+          ? '+85% DMG + Huge Fire Splash & Burn'
+          : '+75% Speed + 4 Lightning Chains';
 
-      const elA = BRICK_COLORS[cellA.color].elementName;
-      const elB = BRICK_COLORS[cellB.color].elementName;
-      const isTwin = cellA.color === cellB.color;
-
-      const twinDetail =
-        cellA.color === 'green'
-          ? '56% Slow + 2× Corrosive DoT'
-          : cellA.color === 'red'
-            ? '+85% DMG + Huge Fire Splash & Burn'
-            : '+75% Speed + 4 Lightning Chains';
-
-      options.push({
-        id: sig,
-        name: isTwin ? `Double ${elA} (×2)` : `${syn.name} Brick`,
-        description: isTwin
-          ? `Fuse two ${elA} bricks: ${twinDetail}`
-          : `Fuse ${elA} + ${elB}: ${syn.shortEffect}`,
-        indices: [i, j],
-        colors: [cellA.color, cellB.color],
-        anchorIndex: i,
-      });
-    }
-  }
+    options.push({
+      id: `${anchorIndex}:${partnerIndex}:${syn.id}`,
+      name: isTwin ? `Double ${elA} (×2)` : `${syn.name} Brick`,
+      description: isTwin
+        ? `Fuse two ${elA} bricks: ${twinDetail}`
+        : `Fuse ${elA} + ${elB}: ${syn.shortEffect}`,
+      indices: [anchorIndex, partnerIndex],
+      colors: [anchorColor, partnerColor],
+      anchorIndex,
+    });
+  });
 
   return options;
 }

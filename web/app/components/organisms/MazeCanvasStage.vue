@@ -103,15 +103,27 @@ function resetCamera() {
   applyCamera({ zoom: 1, panX: 0, panY: 0 });
 }
 
+// The canvas box often has a different shape than the 3:2 board (the dock under it
+// changes height between phases), and `object-contain` then letterboxes the board
+// inside the box. Map pointer positions to the area where the board is really drawn,
+// not to the whole box, or clicks land on the wrong tile.
 function clientToCanvas(clientX: number, clientY: number) {
   const canvas = canvasRef.value;
   if (!canvas) return null;
   const rect = canvas.getBoundingClientRect();
+  const boxW = canvas.clientWidth;
+  const boxH = canvas.clientHeight;
+  if (boxW <= 0 || boxH <= 0) return null;
+
+  const scale = Math.min(boxW / CANVAS_WIDTH, boxH / CANVAS_HEIGHT);
+  const drawnLeft = rect.left + canvas.clientLeft + (boxW - CANVAS_WIDTH * scale) / 2;
+  const drawnTop = rect.top + canvas.clientTop + (boxH - CANVAS_HEIGHT * scale) / 2;
+
   return {
-    cx: ((clientX - rect.left) * CANVAS_WIDTH) / rect.width,
-    cy: ((clientY - rect.top) * CANVAS_HEIGHT) / rect.height,
-    scaleX: CANVAS_WIDTH / rect.width,
-    scaleY: CANVAS_HEIGHT / rect.height,
+    cx: (clientX - drawnLeft) / scale,
+    cy: (clientY - drawnTop) / scale,
+    scaleX: 1 / scale,
+    scaleY: 1 / scale,
   };
 }
 

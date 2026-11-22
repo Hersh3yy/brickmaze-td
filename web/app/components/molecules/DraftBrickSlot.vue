@@ -7,6 +7,8 @@ const props = defineProps<{
   index: number;
   color: BrickColor;
   state: 'next' | 'queued' | 'placed' | 'pickable';
+  /** In the pick phase: this is the brick currently being looked at. */
+  selected?: boolean;
 }>();
 
 const emit = defineEmits<{ pick: [] }>();
@@ -19,8 +21,10 @@ const baseClass = computed(() =>
     'flex items-center gap-2.5 px-3 py-2 rounded-md border text-left transition-all duration-150 min-w-[152px]',
     props.state === 'next'
       ? 'bg-[#283344] border-amber-400/80 shadow-[0_0_0_1px_rgba(251,191,36,0.3)]'
-      : props.state === 'pickable'
-        ? 'bg-[#283344] border-sky-400 hover:bg-[#314056] hover:border-amber-300 cursor-pointer'
+      : props.state === 'pickable' && props.selected
+        ? 'bg-[#314056] border-amber-400 shadow-[0_0_0_1px_rgba(251,191,36,0.45)] cursor-pointer'
+        : props.state === 'pickable'
+          ? 'bg-[#283344] border-sky-400/60 hover:bg-[#314056] hover:border-sky-300 cursor-pointer'
         : props.state === 'placed'
           ? 'bg-[#1A212C] border-[#2C3748] opacity-65'
           : 'bg-[#1D2531] border-[#2D394B]',
@@ -31,7 +35,9 @@ const stateLabel = computed(() =>
   props.state === 'next'
     ? 'Next'
     : props.state === 'pickable'
-      ? 'Keep'
+      ? props.selected
+        ? 'Selected'
+        : `[${props.index + 1}]`
       : props.state === 'placed'
         ? 'Placed'
         : `#${props.index + 1}`

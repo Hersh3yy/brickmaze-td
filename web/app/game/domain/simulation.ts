@@ -19,6 +19,7 @@ import type {
   ImpactRing,
   Particle,
   Projectile,
+  TargetingMode,
   Tower,
 } from './types';
 
@@ -114,6 +115,28 @@ export function nextUid(prefix: string): string {
 }
 
 type Point = { x: number; y: number };
+
+/** Effects that run out within this many seconds count as gone for 'fresh' targeting. */
+const DEBUFF_REFRESH_WINDOW = 0.4;
+
+function carriesDebuff(c: Creep, venom: boolean, burn: boolean): boolean {
+  if (venom && (c.poisonTimer > DEBUFF_REFRESH_WINDOW || c.slowTimer > DEBUFF_REFRESH_WINDOW)) {
+    return true;
+  }
+  return burn && c.burnTimer > DEBUFF_REFRESH_WINDOW;
+}
+
+/** Default targeting for a tower on (x, y): venom-loaded towers spread their debuff. */
+export function defaultTargetingFor(grid: GridCell[][], x: number, y: number): TargetingMode {
+  const mods = computeTileModifiers(grid, x, y);
+  return mods.slowFactor > 0 || mods.poisonDpsRatio > 0 ? 'fresh' : 'first';
+}
+
+/** Whether 'fresh' targeting means anything for a tower on (x, y). */
+export function tileAppliesDebuff(grid: GridCell[][], x: number, y: number): boolean {
+  const mods = computeTileModifiers(grid, x, y);
+  return mods.slowFactor > 0 || mods.poisonDpsRatio > 0 || mods.burnDpsRatio > 0;
+}
 
 function buildJaggedPoints(from: Point, to: Point, segments: number, rng: () => number): Point[] {
   const pts: Point[] = [from];
@@ -504,6 +527,8 @@ export function stepSimulation(
     // Directional weapons (Repeater, Cannon, Rail Sniper)
     let best: Creep | null = null;
     let bestMetric = -Infinity;
+    const appliesVenom = mods.slowFactor > 0 || mods.poisonDpsRatio > 0;
+    const appliesBurn = mods.burnDpsRatio > 0;
 
     for (const c of sim.creeps) {
       if (c.hp <= 0) continue;
@@ -513,7 +538,10 @@ export function stepSimulation(
       let metric = 0;
       if (tower.targeting === 'first') metric = c.pathIndex * 1000 - d * 0.01;
       else if (tower.targeting === 'strongest') metric = c.hp;
-      else metric = -d;
+      else if (tower.targeting === 'fresh') {
+        metric = c.pathIndex * 1000 - d * 0.01;
+        if (carriesDebuff(c, appliesVenom, appliesBurn)) metric -= 1e9;
+      } else metric = -d;
 
       if (metric > bestMetric) {
         bestMetric = metric;

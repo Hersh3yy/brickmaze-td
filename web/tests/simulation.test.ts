@@ -84,3 +84,44 @@ describe('combat simulation', () => {
     expect(res.gold).toBe(res.kills * def.bounty + def.clearBonus)
   })
 })
+
+describe('fresh targeting', () => {
+  function fireOnce(targeting: 'first' | 'fresh') {
+    const grid = createInitialGrid('crossroad')
+    const path = computeMazePath(grid, 'crossroad').path
+    const spot = { x: path[6]!.x, y: path[6]!.y + 1 }
+    grid[spot.y]![spot.x] = { x: spot.x, y: spot.y, kind: 'ACTIVE_BRICK', color: 'green' }
+
+    const sim = createSimState(path.length)
+    const creep = (id: string, pathIndex: number, poisoned: boolean) => {
+      const tile = path[pathIndex]!
+      return {
+        id, wave: 1, trait: 'normal' as const,
+        x: tile.x * 36 + 18, y: tile.y * 36 + 18,
+        path, pathIndex, hp: 500, maxHp: 500, speed: 0, armor: 0, bounty: 1,
+        slowTimer: poisoned ? 2 : 0, slowFactor: poisoned ? 0.35 : 0,
+        poisonTimer: poisoned ? 3 : 0, poisonDps: poisoned ? 5 : 0,
+        burnTimer: 0, burnDps: 0, shredTimer: 0, animTime: 0, radius: 8,
+      }
+    }
+    // The creep further along is already poisoned; the one behind it is clean.
+    sim.creeps.push(creep('ahead-poisoned', 7, true), creep('behind-clean', 5, false))
+
+    const t = tower('t1', 'repeater', spot.x, spot.y)
+    t.targeting = targeting
+    const world: SimWorld = {
+      grid, phase: 'COMBAT', wave: 1, difficulty: 'standard', endlessMode: false,
+      lives: 20, gold: 0, towers: [t], path, speed: 1,
+    }
+    stepSimulation(sim, world, 1 / 60, 0, {}, mulberry32(1))
+    return sim.projectiles[0]?.targetId
+  }
+
+  it('first targets the front creep even when it is already poisoned', () => {
+    expect(fireOnce('first')).toBe('ahead-poisoned')
+  })
+
+  it('fresh skips the poisoned creep and spreads venom to the clean one', () => {
+    expect(fireOnce('fresh')).toBe('behind-clean')
+  })
+})
