@@ -98,6 +98,11 @@ export interface WorldSprites {
    * turret grid can use them for its element-coloured parts.
    */
   turretPalette: PaletteMap;
+  /**
+   * Elite (level 4) turret look for the pixel grids: palette overrides on top of
+   * `turretPalette`, and the trim colour of the glowing outline baked around it.
+   */
+  elite: { palette: PaletteMap; trim: string };
   /** Two walk frames per creep trait. */
   creeps: Record<CreepTrait, [SpriteGrid, SpriteGrid]>;
   creepPalettes: Record<CreepTrait, PaletteMap>;
@@ -127,6 +132,8 @@ export interface VoxelSet {
   detail: number;
   materials: MaterialMap;
   towers: Record<TowerType, VoxelBuild>;
+  /** Elite towers are sculpted this much larger (their `elite` parts added on top). */
+  eliteScale?: number;
   creeps: Record<CreepTrait, VoxelBuild>;
   heroes?: Record<HeroRole, VoxelBuild>;
 }

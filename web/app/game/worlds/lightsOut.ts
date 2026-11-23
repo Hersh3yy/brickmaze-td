@@ -67,6 +67,8 @@ const sprites: WorldSprites = {
     P: '#F1E7D3',
     N: '#EEF1F5',
   },
+  // Elite in the flat fallback: gold-painted trim and brass (the 3D models add more)
+  elite: { palette: { H: '#A57D18', K: '#E5B83A', k: '#FFE793' }, trim: '#FFE793' },
   // Green plastic army men on round bases, seen from the side and facing right; the
   // renderer mirrors them to face targets on the left. The base is element-painted.
   turrets: {

@@ -67,6 +67,25 @@ function standingBody(s: VoxelSculptor, x: number): number {
   return 12.4;
 }
 
+// Elite veterans: the same figures on a gold-painted plinth, with a gold helmet band,
+// an element-coloured crest, a medal and a better weapon.
+
+function plinth(s: VoxelSculptor) {
+  s.cyl(8, 8, 0, 0.1, 6.4, 'Y');
+}
+
+/** Gold helmet band and element crest for the head made by head(s, x, z). */
+function veteranHelmet(s: VoxelSculptor, x: number, z: number) {
+  s.cyl(x, 8, z + 2.5, z + 2.6, 3.2, 'Y');
+  s.ell(x - 0.2, 8, z + 5, 2.4, 0.7, 1, 'C');
+}
+
+/** A gold medal and a red ribbon on the chest of standingBody(s, x). */
+function medals(s: VoxelSculptor, x: number) {
+  s.ell(x + 2, 6.6, 11.6, 0.5, 0.55, 0.55, 'Y');
+  s.ell(x + 2, 6.6, 12.5, 0.45, 0.5, 0.35, 'F');
+}
+
 const rifleman: VoxelBuild = {
   size: [16, 16, 21],
   muzzle: [7.6, 11.2],
@@ -83,6 +102,15 @@ const rifleman: VoxelBuild = {
     s.rod(3.4, 8, 10.8, 4.8, 8, 11, 0.6, 'K');
     s.ell(2.4, 8, 11.6, 0.6, 1.7, 1.1, 'K');
     s.rod(13.6, 8, 11.1, 14.4, 8, 11.2, 0.8, 'C');
+  },
+  elite(s) {
+    plinth(s);
+    veteranHelmet(s, 7.7, 13);
+    medals(s, 7.5);
+    // Scope on top, bayonet under the barrel, a wider ammo band
+    s.rod(9, 8, 12.1, 11.6, 8, 12.3, 0.5, 'N');
+    s.rod(12.5, 8, 10, 15.9, 8, 10.3, 0.3, 'N');
+    s.rod(13.2, 8, 11.1, 14.8, 8, 11.2, 0.9, 'C');
   },
 };
 
@@ -108,6 +136,17 @@ const spoonGunner: VoxelBuild = {
     s.rod(5, 5, 9, 8.6, 6.6, 4.2, 0.9, 'G');
     s.rod(5, 11, 9, 8.6, 9.4, 4.4, 0.9, 'G');
   },
+  elite(s) {
+    plinth(s);
+    veteranHelmet(s, 4.9, 9.6);
+    s.ell(6.6, 6.6, 7.8, 0.45, 0.5, 0.5, 'Y');
+    // Gold spoon, a bigger marble, and two spare marbles by the plank
+    s.rod(9.5, 8, 3.6, 14, 8, 9, 0.6, 'Y');
+    s.ell(14.3, 8, 9.4, 1.6, 1.6, 0.8, 'Y');
+    s.ell(14.3, 8, 10.7, 1.45, 1.45, 1.45, 'C');
+    s.ell(11.4, 11.6, 3, 0.9, 0.9, 0.9, 'C');
+    s.ell(12.8, 12.2, 3, 0.9, 0.9, 0.9, 'C');
+  },
 };
 
 const drummer: VoxelBuild = {
@@ -127,6 +166,20 @@ const drummer: VoxelBuild = {
     s.rod(6.4, 11.4, sh, 8.4, 10.4, 11, 0.9, 'G');
     s.rod(8.4, 5.8, 11, 10.8, 7, 13.6, 0.4, 'W');
     s.rod(8.4, 10.2, 11, 10.8, 9, 13.6, 0.4, 'W');
+  },
+  elite(s) {
+    plinth(s);
+    veteranHelmet(s, 6.4, 13);
+    medals(s, 6.2);
+    // Gold hoops with studs round the shell, gold-tipped sticks
+    s.cyl(10.4, 8, 5.2, 5.7, 3.1, 'Y');
+    s.cyl(10.4, 8, 8.8, 9.3, 3.1, 'Y');
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4;
+      s.ell(10.4 + Math.cos(a) * 2.85, 8 + Math.sin(a) * 2.85, 7.5, 0.4, 0.4, 0.45, 'Y');
+    }
+    s.ell(10.8, 7, 13.6, 0.6, 0.6, 0.6, 'Y');
+    s.ell(10.8, 9, 13.6, 0.6, 0.6, 0.6, 'Y');
   },
 };
 
@@ -149,6 +202,15 @@ const proneSniper: VoxelBuild = {
     s.rod(12.4, 8, 4.6, 16, 8, 4.9, 0.38, 'N');
     s.ell(12.8, 8, 5.7, 0.7, 0.7, 0.7, 'K');
     s.ell(12.1, 8, 4.7, 0.6, 0.9, 0.6, 'C');
+  },
+  elite(s) {
+    plinth(s);
+    // Gold helmet band and crest on the prone head, a long gold scope, a steel bipod
+    s.cyl(9.8, 8, 5.1, 5.2, 2.8, 'Y');
+    s.ell(9.6, 8, 7.4, 2, 0.6, 0.8, 'C');
+    s.rod(11.4, 8, 5.9, 14.4, 8, 6, 0.55, 'Y');
+    s.rod(14.6, 8, 4.8, 15.2, 6.6, 2.2, 0.3, 'N');
+    s.rod(14.6, 8, 4.8, 15.2, 9.4, 2.2, 0.3, 'N');
   },
 };
 
@@ -265,6 +327,7 @@ const mendwife = mouseBuild({ fur: 'U', light: 'm' }, 1, [22, 12, 10], (s) => {
 export const lightsOutVoxels: VoxelSet = {
   detail: 1.6,
   materials: MATERIALS,
+  eliteScale: 1.1,
   towers: {
     repeater: rifleman,
     cannon: spoonGunner,

@@ -3,6 +3,7 @@ import {
   BRICK_COLORS,
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
+  ELITE_LEVEL,
   GRID_COLS,
   GRID_ROWS,
   TILE_SIZE,
@@ -567,7 +568,8 @@ function drawPixelTower(
 ) {
   const cx = tower.x * TILE_SIZE + TILE_SIZE / 2;
   const cy = tower.y * TILE_SIZE + TILE_SIZE / 2;
-  const sprite = spriteAtlas.getTurret(tower.type, element);
+  const elite = tower.level === ELITE_LEVEL;
+  const light = element === 'kinetic' ? '#FEF08A' : BRICK_COLORS[element].lightHex;
 
   ctx.save();
   if (isRelocating) {
@@ -584,12 +586,14 @@ function drawPixelTower(
   // brick under it already show the element, and the pulse was noise across the board.)
 
   const kick = tower.type === 'pulse' ? 0 : Math.round(tower.recoil * 3.5);
+  const voxels = spriteAtlas.hasVoxels();
+  if (elite) drawEliteRing(ctx, cx, voxels ? cy + 8 : cy, voxels ? 0.42 : 1, light, nowSec);
 
-  if (spriteAtlas.hasVoxels()) {
+  if (voxels) {
     // 3D figure baked in 16 aim directions; it stands on the lower part of its tile and
     // may rise above the tile, so towers are drawn top row first (see renderArenaFrame).
     const dir = tower.type === 'pulse' ? 2 : Math.round(tower.angle / (Math.PI / 8));
-    const v = spriteAtlas.getVoxelTower(tower.type, element, dir)!;
+    const v = spriteAtlas.getVoxelTower(tower.type, element, dir, elite)!;
     const gx = cx - Math.round(Math.cos(tower.angle) * kick);
     const gy = cy + 7 - Math.round(Math.sin(tower.angle) * kick * 0.5);
     ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
@@ -601,16 +605,14 @@ function drawPixelTower(
       const snapped = (Math.round(tower.angle / (Math.PI / 8)) * Math.PI) / 8;
       const mx = Math.round(gx + Math.cos(snapped) * v.muzzle[0]);
       const my = Math.round(gy + Math.sin(snapped) * v.muzzle[0] * 0.5 - v.muzzle[1]);
-      ctx.fillStyle = element === 'kinetic' ? '#FEF08A' : BRICK_COLORS[element].lightHex;
-      ctx.fillRect(mx - 3, my - 3, 6, 6);
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(mx - 1, my - 1, 3, 3);
+      drawMuzzleFlash(ctx, mx, my, light, elite);
     }
     ctx.restore();
     drawLevelPips(ctx, tower);
     return;
   }
 
+  const sprite = spriteAtlas.getTurret(tower.type, element, elite);
   ctx.translate(cx, cy);
   if (spriteAtlas.turretsFace()) {
     // Side-view figure: stands still, mirrors to face targets on the left, and sits two
@@ -626,10 +628,14 @@ function drawPixelTower(
   // Element-colored muzzle flash spark (a lobbing catapult has no muzzle in side view)
   const flashes = tower.type !== 'pulse' && !(tower.type === 'cannon' && spriteAtlas.turretsFace());
   if (tower.muzzleFlash > 0 && flashes) {
-    ctx.fillStyle = element === 'kinetic' ? '#FEF08A' : BRICK_COLORS[element].lightHex;
-    ctx.fillRect(13 - kick, -4, 6, 8);
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(14 - kick, -2, 4, 4);
+    if (elite) {
+      drawMuzzleFlash(ctx, 16 - kick, 0, light, true);
+    } else {
+      ctx.fillStyle = light;
+      ctx.fillRect(13 - kick, -4, 6, 8);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(14 - kick, -2, 4, 4);
+    }
   }
 
   ctx.restore();
@@ -637,13 +643,86 @@ function drawPixelTower(
 }
 
 function drawLevelPips(ctx: CanvasRenderingContext2D, tower: Tower) {
-  for (let lv = 0; lv < tower.level; lv++) {
+  const elite = tower.level === ELITE_LEVEL;
+  const pips = elite ? 3 : tower.level;
+  for (let lv = 0; lv < pips; lv++) {
     const lx = tower.x * TILE_SIZE + 6 + lv * 8;
     const ly = tower.y * TILE_SIZE + TILE_SIZE - 6;
     ctx.fillStyle = '#0F172A';
     ctx.fillRect(lx - 1, ly - 1, 6, 5);
-    ctx.fillStyle = tower.level >= 4 ? '#F0ABFC' : tower.level === 3 ? '#FDE047' : '#F8FAFC';
+    ctx.fillStyle = tower.level >= 3 ? '#FDE047' : '#F8FAFC';
     ctx.fillRect(lx, ly, 4, 3);
+  }
+  if (elite) {
+    // Elite badge after the three gold pips: a small gold diamond with a white heart.
+    const bx = tower.x * TILE_SIZE + 6 + 3 * 8 + 2;
+    const by = tower.y * TILE_SIZE + TILE_SIZE - 5;
+    ctx.fillStyle = '#0F172A';
+    ctx.fillRect(bx - 2, by - 3, 5, 7);
+    ctx.fillRect(bx - 3, by - 2, 7, 5);
+    ctx.fillStyle = '#FACC15';
+    ctx.fillRect(bx - 1, by - 2, 3, 5);
+    ctx.fillRect(bx - 2, by - 1, 5, 3);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(bx, by, 1, 1);
+  }
+}
+
+/**
+ * The rune ring under an Elite tower: an element-coloured ring (squashed to an ellipse in
+ * 3D Worlds) with four gold runes slowly circling it. At most two Elites exist, so this
+ * small per-frame drawing is affordable even on old phones.
+ */
+function drawEliteRing(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  squash: number,
+  color: string,
+  nowSec: number
+) {
+  // Wider than the tile, so it shows on the floor round the (same-coloured) brick.
+  const r = 20;
+  const pulse = 0.5 + 0.5 * Math.sin(nowSec * 3);
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(x, y, r, r * squash, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ctx.globalAlpha = 0.7 + pulse * 0.3;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  for (let i = 0; i < 4; i++) {
+    const a = nowSec * 0.8 + (i * Math.PI) / 2;
+    const rx = Math.round(x + Math.cos(a) * r);
+    const ry = Math.round(y + Math.sin(a) * r * squash);
+    ctx.fillStyle = '#1C1917';
+    ctx.fillRect(rx - 2, ry - 3, 5, 6);
+    ctx.fillRect(rx - 3, ry - 2, 7, 4);
+    ctx.fillStyle = '#FACC15';
+    ctx.fillRect(rx - 1, ry - 2, 3, 4);
+    ctx.fillRect(rx - 2, ry - 1, 5, 2);
+  }
+  ctx.restore();
+}
+
+/** Muzzle flash; an Elite's is bigger, with a four-ray star. */
+function drawMuzzleFlash(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, elite: boolean) {
+  ctx.fillStyle = color;
+  if (elite) {
+    ctx.fillRect(x - 5, y - 1, 11, 3);
+    ctx.fillRect(x - 1, y - 5, 3, 11);
+    ctx.fillRect(x - 3, y - 3, 7, 7);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(x - 2, y - 1, 5, 3);
+    ctx.fillRect(x - 1, y - 2, 3, 5);
+  } else {
+    ctx.fillRect(x - 3, y - 3, 6, 6);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(x - 1, y - 1, 3, 3);
   }
 }
 
@@ -662,7 +741,7 @@ function warmVoxelSprites(frame: RenderFrameInput, key: number, budgetMs = 3) {
   for (const tower of frame.towers) {
     const element = towerElement(frame, tower);
     for (let d = 0; d < VOXEL_TOWER_DIRS; d++) {
-      spriteAtlas.getVoxelTower(tower.type, element, d);
+      spriteAtlas.getVoxelTower(tower.type, element, d, tower.level === ELITE_LEVEL);
       if (spent()) return;
     }
   }
@@ -902,7 +981,10 @@ export function renderArenaFrame(ctx: CanvasRenderingContext2D, frame: RenderFra
   }
 
   if (frame.phase !== 'COMBAT' && spriteAtlas.hasVoxels()) {
-    warmVoxelSprites(frame, mix(g, hashText(activeWorld().id)));
+    // Elite towers bake their own model, so promotions re-warm too.
+    let warm = mix(g, hashText(activeWorld().id));
+    for (const t of frame.towers) if (t.level === ELITE_LEVEL) warm = mix(warm, t.y * GRID_COLS + t.x + 1);
+    warmVoxelSprites(frame, warm);
   }
 
   // 1. Floor + bricks from the cached board layer (repainted only when something changed)

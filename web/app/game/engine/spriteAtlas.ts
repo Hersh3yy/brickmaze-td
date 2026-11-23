@@ -16,6 +16,34 @@ export interface VoxelSprite {
   muzzle?: [number, number];
 }
 
+/**
+ * Paints a one-pixel trim round a sprite's silhouette, on the transparent pixels next to
+ * it, so an Elite turret reads as glowing at a glance.
+ */
+function addTrim(canvas: HTMLCanvasElement, hex: string) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const { width: w, height: h } = canvas;
+  const img = ctx.getImageData(0, 0, w, h);
+  const a = img.data;
+  const out = new Uint8ClampedArray(a);
+  const n = parseInt(hex.slice(1), 16);
+  const opaque = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && a[(y * w + x) * 4 + 3]! > 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      if (a[i + 3]) continue;
+      if (opaque(x + 1, y) || opaque(x - 1, y) || opaque(x, y + 1) || opaque(x, y - 1)) {
+        out[i] = (n >> 16) & 255;
+        out[i + 1] = (n >> 8) & 255;
+        out[i + 2] = n & 255;
+        out[i + 3] = 230;
+      }
+    }
+  }
+  ctx.putImageData(new ImageData(out, w, h), 0, 0);
+}
+
 /** Tower aim directions baked per model; creeps get four walking directions. */
 export const VOXEL_TOWER_DIRS = 16;
 const OUTLINE_INK: [number, number, number] = [20, 18, 22];
@@ -84,6 +112,7 @@ class PixelSpriteAtlas {
   private emblemCache = new Map<BrickColor, HTMLCanvasElement>();
   private voxelModels = new Map<string, VoxelModel>();
   private voxelSprites = new Map<string, VoxelSprite>();
+  private eliteBuilds = new Map<TowerType, VoxelBuild>();
 
   /** Current World, dropping every cached sprite when it has changed since the last call. */
   private world(): WorldDefinition {
@@ -97,6 +126,7 @@ class PixelSpriteAtlas {
       this.emblemCache.clear();
       this.voxelModels.clear();
       this.voxelSprites.clear();
+      this.eliteBuilds.clear();
     }
     return world;
   }
@@ -118,21 +148,24 @@ class PixelSpriteAtlas {
     return sprite;
   }
 
-  public getTurret(type: TowerType, element: AmmoElement): HTMLCanvasElement {
+  /** A turret sprite; `elite` gives the World's Elite palette and a glowing trim. */
+  public getTurret(type: TowerType, element: AmmoElement, elite = false): HTMLCanvasElement {
     const world = this.world();
     // A 3D World's shop icon is its tower turned a little towards the viewer.
-    if (world.sprites.voxels) return this.getVoxelTower(type, element, 1)!.canvas;
-    const key = `${type}:${element}`;
+    if (world.sprites.voxels) return this.getVoxelTower(type, element, 1, elite)!.canvas;
+    const key = `${type}:${element}${elite ? ':e' : ''}`;
     const existing = this.turretCache.get(key);
     if (existing) return existing;
     const shades = world.sprites.elements[element];
     const palette: PaletteMap = {
       ...world.sprites.turretPalette,
+      ...(elite ? world.sprites.elite.palette : {}),
       C: shades.c,
       L: shades.l,
       D: shades.d,
     };
     const sprite = this.bake(world, world.sprites.turrets[type], palette);
+    if (elite) addTrim(sprite, world.sprites.elite.trim);
     this.turretCache.set(key, sprite);
     return sprite;
   }
@@ -169,11 +202,27 @@ class PixelSpriteAtlas {
   }
 
   /** A tower baked facing one of VOXEL_TOWER_DIRS directions (0 = right, clockwise). */
-  public getVoxelTower(type: TowerType, element: AmmoElement, dir: number): VoxelSprite | null {
+  public getVoxelTower(type: TowerType, element: AmmoElement, dir: number, elite = false): VoxelSprite | null {
     const set = this.world().sprites.voxels;
     if (!set) return null;
     const d = ((dir % VOXEL_TOWER_DIRS) + VOXEL_TOWER_DIRS) % VOXEL_TOWER_DIRS;
-    return this.bakeVoxel(`t:${type}:${element}:${d}`, `t:${type}`, set.towers[type], 0, (d * Math.PI * 2) / VOXEL_TOWER_DIRS, element);
+    const angle = (d * Math.PI * 2) / VOXEL_TOWER_DIRS;
+    if (!elite) return this.bakeVoxel(`t:${type}:${element}:${d}`, `t:${type}`, set.towers[type], 0, angle, element);
+    let build = this.eliteBuilds.get(type);
+    if (!build) {
+      // The Elite model: the normal one with its Elite parts on top, sculpted larger.
+      const base = set.towers[type];
+      build = {
+        ...base,
+        scale: (base.scale ?? 1) * (set.eliteScale ?? 1),
+        sculpt: (s, frame) => {
+          base.sculpt(s, frame);
+          base.elite?.(s);
+        },
+      };
+      this.eliteBuilds.set(type, build);
+    }
+    return this.bakeVoxel(`t:${type}:${element}:${d}:e`, `t:${type}:e`, build, 0, angle, element);
   }
 
   /** A creep or escort hero baked walking right (0), down (1), left (2) or up (3). */

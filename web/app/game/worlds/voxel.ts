@@ -29,6 +29,8 @@ export interface VoxelBuild {
   muzzle?: [reach: number, height: number];
   /** Sculpts the model; `frame` is the walk frame (0 or 1) for animated models. */
   sculpt: (s: VoxelSculptor, frame: 0 | 1) => void;
+  /** Extra parts for the Elite version of a tower, sculpted over the normal model. */
+  elite?: (s: VoxelSculptor) => void;
 }
 
 /** One visible voxel face set, precomputed once per model so each angle bakes fast. */

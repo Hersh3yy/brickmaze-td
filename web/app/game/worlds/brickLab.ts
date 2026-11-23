@@ -23,6 +23,8 @@ const sprites: WorldSprites = {
     green: { c: '#10B981', l: '#A7F3D0', d: '#047857' },
   },
   turretPalette: { o: '#0F172A', O: '#0F172A', S: '#475569', M: '#94A3B8', m: '#E2E8F0' },
+  // Elite: gold housing and a bright barrel, outlined in a gold glow
+  elite: { palette: { o: '#422006', O: '#422006', S: '#CA8A04', M: '#FDE047', m: '#FEFCE8' }, trim: '#FACC15' },
   turrets: {
     repeater: [
       '................',
