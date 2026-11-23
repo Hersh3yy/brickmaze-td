@@ -18,6 +18,7 @@ async function handleCopy() {
   try {
     await navigator.clipboard.writeText(props.transferCode);
     copied.value = true;
+    track('profile-transfer', { action: 'export' });
     setTimeout(() => {
       copied.value = false;
     }, 1800);
@@ -30,6 +31,7 @@ async function handleImportSubmit() {
   if (!importInput.value.trim()) return;
   const res = await props.importCode(importInput.value);
   if (res.ok) {
+    track('profile-transfer', { action: 'import' });
     status.value = { kind: 'success', message: 'Profile loaded and saved to this browser.' };
     importInput.value = '';
   } else {

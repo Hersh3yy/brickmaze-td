@@ -97,6 +97,12 @@ function themeButtonClass(themeId: BoardThemeId): string {
 }
 
 function startMatch() {
+  track('match-start', {
+    difficulty: selectedDifficulty.value,
+    map: selectedMap.value,
+    world: world.value.id,
+    theme: profile.value.selectedTheme,
+  });
   return navigateTo('/play');
 }
 
