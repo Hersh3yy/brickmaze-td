@@ -137,7 +137,8 @@ export interface TowerDefinition {
   hotkey: string;
 }
 
-export const TOWER_LIST: TowerType[] = ['repeater', 'cannon', 'sniper', 'pulse'];
+/** Shop, tile menu and number keys all follow this order: TOWER_LIST[i] has hotkey i + 1. */
+export const TOWER_LIST: TowerType[] = ['repeater', 'cannon', 'pulse', 'sniper'];
 
 export const TOWER_DEFS: Record<TowerType, TowerDefinition> = {
   repeater: {

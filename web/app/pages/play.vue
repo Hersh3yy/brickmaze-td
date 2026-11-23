@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { BRICKS_PER_TURN } from '~/game/domain/constants';
+import { BRICKS_PER_TURN, getWaveDefinition } from '~/game/domain/constants';
+import { waveTitle } from '~/game/worlds';
 
 const { profile, ensureLoaded, recordMatchEnd } = useProfile();
 const { selectedMap, selectedDifficulty } = useMatchSetup();
@@ -29,6 +30,10 @@ const {
   creepsRemainingUi,
   waveTotalCreepsUi,
   outcomeSummary,
+  sellArmedId,
+  waveReport,
+  shortcutsOpen,
+  towers,
   pathResult,
   hoverPreview,
   selectedCell,
@@ -55,6 +60,7 @@ const {
   hoverTile,
   cancelInteraction,
   closeTileMenu,
+  openTowerDetails,
   toggleMute,
   setSpeed,
   continueEndless,
@@ -64,6 +70,14 @@ const {
   mapLayout: selectedMap.value,
   difficulty,
   recordMatchEnd,
+});
+
+const world = useWorld();
+/** "Wave 3 · Micro Swarm · 21× 101 HP", for the phone dock. */
+const waveLine = computed(() => {
+  const def = getWaveDefinition(wave.value, difficulty);
+  const prefix = phase.value === 'COMBAT' ? 'Now' : 'Next';
+  return `${prefix}: Wave ${def.wave} · ${waveTitle(def, world.value)} · ${def.count}× ${def.hp.toLocaleString()} HP`;
 });
 
 function exitToLobby() {
@@ -91,6 +105,7 @@ function exitToLobby() {
         @toggle-mute="toggleMute"
         @send-wave="sendWave"
         @exit-to-lobby="exitToLobby"
+        @open-shortcuts="shortcutsOpen = true"
       />
     </template>
 
@@ -103,22 +118,33 @@ function exitToLobby() {
         :hover-status-text="hoverPreview.statusText"
         :hover-status-tone="hoverPreview.tone"
         :boss-preview="bossPreview"
+        :path-length="pathResult.length"
+        :creeps-remaining="creepsRemainingUi"
+        :wave-total-creeps="waveTotalCreepsUi"
         @hover-tile="hoverTile"
         @click-tile="clickTile"
         @right-click="cancelInteraction"
         @open-mobile-inspector="mobileInspectorOpen = true"
       >
         <template #overlay="{ tileRect }">
+          <WaveReportToast v-if="waveReport" :report="waveReport" />
           <TileActionMenu
             v-if="tileMenu"
             :menu="tileMenu"
             :gold="gold"
             :tile-rect="tileRect"
-            :avoid="tileMenu.kind === 'draft' ? placedTurnCoords : []"
+            :avoid="tileMenu.kind === 'draft' ? placedTurnCoords : towers"
+            :sell-armed="tileMenu.kind === 'tower' && sellArmedId === tileMenu.tower.id"
+            :elite-count="eliteTowerCount"
             @keep="keepSelectedBrick"
             @fuse="fuseTurnPair"
             @mount="placeTowerOnSelected"
             @remove="tileMenu && clearGrayBrick(tileMenu.coord)"
+            @upgrade="upgradeTower"
+            @move="startRelocate"
+            @sell="sellTower"
+            @targeting="changeTargeting"
+            @details="openTowerDetails"
             @close="closeTileMenu"
           />
         </template>
@@ -130,18 +156,10 @@ function exitToLobby() {
         :grid="grid"
         :wave="wave"
         :difficulty="difficulty"
-        :gold="gold"
         :phase="phase"
         :selected-cell="selectedCell"
         :selected-tower="selectedTower"
         :elite-count="eliteTowerCount"
-        :relocating-tower-id="relocatingTowerId"
-        @upgrade-tower="upgradeTower"
-        @start-relocate="startRelocate"
-        @cancel-relocate="cancelRelocate"
-        @sell-tower="sellTower"
-        @change-targeting="changeTargeting"
-        @clear-gray-brick="clearGrayBrick"
         @close-mobile="mobileInspectorOpen = false"
       />
     </template>
@@ -155,16 +173,17 @@ function exitToLobby() {
         :pick-index="pickIndex"
         :gold="gold"
         :placing-tower-type="placingTowerType"
-        :creeps-remaining="creepsRemainingUi"
-        :wave-total-creeps="waveTotalCreepsUi"
+        :wave-line="waveLine"
         @reroll-draft="rerollDraft"
         @undo-last-brick="undoLastBrick"
         @select-draft-brick="selectDraftBrick"
         @select-tower-type="selectTowerType"
+        @open-details="mobileInspectorOpen = true"
       />
     </template>
 
     <template #modal>
+      <ShortcutSheet v-if="shortcutsOpen" @close="shortcutsOpen = false" />
       <MatchOutcomeModal
         v-if="outcomeSummary"
         :summary="outcomeSummary"

@@ -38,7 +38,7 @@ const isLocked = computed(() => props.disabled || !canAfford.value);
     :disabled="isLocked"
     :title="text.description"
     :class="[
-      'flex items-center gap-3 px-3.5 py-2 rounded-md border text-left transition-all duration-150',
+      'flex items-center gap-2.5 px-2.5 lg:px-3.5 py-2 rounded-md border text-left transition-all duration-150 min-w-0',
       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400',
       selected
         ? 'bg-[#2C3A4E] border-amber-400 shadow-[0_0_0_1px_rgba(251,191,36,0.35)]'
@@ -69,7 +69,7 @@ const isLocked = computed(() => props.disabled || !canAfford.value);
       </div>
       <div class="flex items-center justify-between gap-2 mt-0.5">
         <span class="text-[11px] text-slate-400 truncate">{{ def.shortRole }}</span>
-        <span class="font-mono text-[10px] text-slate-500">[{{ def.hotkey }}]</span>
+        <kbd class="pointer-coarse:hidden font-mono text-[10px] text-slate-500">{{ def.hotkey }}</kbd>
       </div>
     </div>
   </button>

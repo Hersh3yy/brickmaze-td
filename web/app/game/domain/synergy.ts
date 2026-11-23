@@ -38,6 +38,13 @@ export function matchColorPairSynergy(a: BrickColor, b: BrickColor): SynergyInfo
   }
 }
 
+/** The one name a fused (Master) brick goes by: "Double Venom (×2)" or "Wildfire Brick". */
+export function fusedBrickName(a: BrickColor, b: BrickColor): string {
+  if (a === b) return `Double ${elementName(a)} (×2)`;
+  const syn = matchColorPairSynergy(a, b);
+  return syn ? `${activeWorld().text.synergies[syn.id].name} Brick` : `${elementName(a)} + ${elementName(b)}`;
+}
+
 export function getCellColors(cell: GridCell): BrickColor[] {
   if (cell.kind !== 'ACTIVE_BRICK' && cell.kind !== 'MASTER_BRICK') return [];
   const colors: BrickColor[] = [];
@@ -319,7 +326,7 @@ export function findFusionOptionsForBrick(
 
     options.push({
       id: `${anchorIndex}:${partnerIndex}:${syn.id}`,
-      name: isTwin ? `Double ${elA} (×2)` : `${synText.name} Brick`,
+      name: fusedBrickName(anchorColor, partnerColor),
       description: isTwin
         ? `Fuse two ${elA} bricks: ${twinDetail}`
         : `Fuse ${elA} + ${elB}: ${synText.shortEffect}`,

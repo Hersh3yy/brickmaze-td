@@ -15,6 +15,9 @@ const props = defineProps<{
   hoverStatusText: string | null;
   hoverStatusTone: 'neutral' | 'good' | 'info' | 'bad';
   bossPreview?: { name: string; hp: number; count: number } | null;
+  pathLength: number;
+  creepsRemaining: number;
+  waveTotalCreeps: number;
 }>();
 
 const emit = defineEmits<{
@@ -91,7 +94,18 @@ onMounted(() => {
 onBeforeUnmount(() => {
   cancelAnimationFrame(rafId);
   resizeObserver?.disconnect();
+  window.removeEventListener('keydown', onZoomKey);
 });
+
+// + / - zoom around the centre, 0 fits the board again.
+function onZoomKey(e: KeyboardEvent) {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === '+' || e.key === '=') zoomStep(0.25);
+  else if (e.key === '-' || e.key === '_') zoomStep(-0.25);
+  else if (e.key === '0') resetCamera();
+}
+onMounted(() => window.addEventListener('keydown', onZoomKey));
 
 function applyCamera(next: CameraView) {
   const clamped = clampCamera(next);
@@ -199,6 +213,8 @@ function dragTo(clientX: number, clientY: number, threshold: number) {
   const dx = (clientX - drag.startClientX) * pos.scaleX;
   const dy = (clientY - drag.startClientY) * pos.scaleY;
   if (Math.abs(dx) > threshold || Math.abs(dy) > threshold) drag.moved = true;
+  // Below the threshold it is still a click: leave the board where it is.
+  if (!drag.moved) return;
   applyCamera({
     zoom: props.frame.camera.zoom,
     panX: drag.startPanX + dx,
@@ -206,16 +222,39 @@ function dragTo(clientX: number, clientY: number, threshold: number) {
   });
 }
 
+/**
+ * Wheel input. Zoom follows the size of the scroll, so a trackpad zooms smoothly and
+ * a mouse notch zooms one comfortable step (it used to jump 25% per event, which sent
+ * a trackpad straight to 225%). Trackpad pinch arrives as ctrl+wheel. Sideways scroll
+ * (or Shift+wheel) pans the zoomed board; dragging pans too.
+ */
 function handleWheel(e: WheelEvent) {
   const pos = clientToCanvas(e.clientX, e.clientY);
   if (!pos) return;
-  const delta = e.deltaY < 0 ? 0.25 : -0.25;
-  zoomAtPoint(props.frame.camera.zoom + delta, pos.cx, pos.cy);
+  const cam = props.frame.camera;
+  const px = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
+  const dx = (e.shiftKey && e.deltaX === 0 ? e.deltaY : e.deltaX) * px;
+  const dy = e.shiftKey ? 0 : e.deltaY * px;
+
+  if (!e.ctrlKey && Math.abs(dx) > Math.abs(dy)) {
+    if (cam.zoom <= 1.001) return;
+    applyCamera({ zoom: cam.zoom, panX: cam.panX - dx * pos.scaleX, panY: cam.panY });
+    return;
+  }
+
+  const step = Math.max(-120, Math.min(120, dy));
+  const factor = Math.exp(-step * (e.ctrlKey ? 0.01 : 0.002));
+  zoomAtPoint(cam.zoom * factor, pos.cx, pos.cy);
 }
 
 function handleMouseDown(e: MouseEvent) {
-  const isPanButton = e.button === 1 || e.button === 2 || (e.button === 0 && e.shiftKey);
-  if (isPanButton && props.frame.camera.zoom > 1.01) {
+  if (props.frame.camera.zoom <= 1.01) return;
+  // Left drag pans too once zoomed in; a press without movement is still a click.
+  if (e.button === 0) {
+    startDrag(e.clientX, e.clientY);
+    return;
+  }
+  if (e.button === 1 || e.button === 2) {
     e.preventDefault();
     startDrag(e.clientX, e.clientY);
   }
@@ -302,6 +341,14 @@ const toneClass = computed(() =>
         : 'text-slate-400'
 );
 
+const zoomed = computed(() => zoomPct.value > 100);
+const showCreeps = computed(() => props.phase === 'COMBAT' && props.waveTotalCreeps > 0);
+const creepProgress = computed(() =>
+  props.waveTotalCreeps > 0
+    ? (props.waveTotalCreeps - props.creepsRemaining) / props.waveTotalCreeps
+    : 0
+);
+
 const bossBar = computed(
   () => Boolean(props.bossPreview) && props.phase !== 'VICTORY' && props.phase !== 'GAME_OVER'
 );
@@ -311,7 +358,7 @@ const bossBar = computed(
   <div class="flex flex-col h-full min-h-0 bg-[#141920]">
     <div
       :class="[
-        'flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-4 py-1.5 sm:py-2 border-b shrink-0',
+        'relative flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-4 py-1.5 sm:py-2 border-b shrink-0',
         bossBar ? 'bg-rose-950/45 border-rose-500/40' : 'bg-[#1A212C] border-[#293446]',
       ]"
     >
@@ -323,6 +370,20 @@ const bossBar = computed(
       />
 
       <div class="flex items-center gap-2 sm:gap-4 shrink-0">
+        <span
+          v-if="showCreeps"
+          class="font-mono text-[11px] sm:text-xs text-slate-300 tabular-nums whitespace-nowrap"
+          title="Creeps left in this wave"
+        >
+          {{ creepsRemaining }}/{{ waveTotalCreeps }}
+        </span>
+        <span
+          v-else
+          class="sm:hidden font-mono text-[11px] text-sky-300 tabular-nums whitespace-nowrap"
+          title="Path length in tiles"
+        >
+          Path {{ pathLength }}
+        </span>
         <span
           v-if="hoverStatusText"
           :class="[
@@ -342,7 +403,7 @@ const bossBar = computed(
           <button
             type="button"
             :disabled="zoomPct <= 100"
-            title="Zoom out"
+            title="Zoom out (-)"
             aria-label="Zoom out"
             class="p-1.5 sm:p-1 text-slate-300 hover:text-white disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
             @click="zoomStep(-0.25)"
@@ -355,7 +416,7 @@ const bossBar = computed(
           <button
             type="button"
             :disabled="zoomPct >= 225"
-            title="Zoom in to inspect pixel sprites (or scroll wheel / pinch)"
+            title="Zoom in (+, mouse wheel or pinch)"
             aria-label="Zoom in"
             class="p-1.5 sm:p-1 text-slate-300 hover:text-white disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
             @click="zoomStep(0.25)"
@@ -365,7 +426,7 @@ const bossBar = computed(
           <button
             v-if="zoomPct > 100"
             type="button"
-            title="Reset camera view"
+            title="Fit the board (0)"
             aria-label="Reset camera view"
             class="p-1.5 sm:p-1 text-amber-300 hover:text-amber-200 cursor-pointer border-l border-[#2C384B] pl-1.5"
             @click="resetCamera"
@@ -384,6 +445,14 @@ const bossBar = computed(
           <Info class="w-4 h-4" />
         </button>
       </div>
+
+      <!-- Wave progress: a thin line under the strip, so the dock keeps its height -->
+      <div v-if="showCreeps" class="absolute left-0 right-0 bottom-0 h-0.5 bg-white/5" aria-hidden="true">
+        <div
+          class="h-full bg-emerald-500 transition-[width] duration-150"
+          :style="{ width: `${creepProgress * 100}%` }"
+        />
+      </div>
     </div>
 
     <!-- Top-aligned on purpose: the dock below changes height between phases, and a
@@ -397,7 +466,10 @@ const bossBar = computed(
           ref="canvasRef"
           :width="CANVAS_WIDTH"
           :height="CANVAS_HEIGHT"
-          class="pixel-canvas touch-none w-full h-full object-contain rounded-md border border-[#324054] shadow-[0_12px_36px_rgba(0,0,0,0.45)] cursor-crosshair select-none"
+          :class="[
+            'pixel-canvas touch-none w-full h-full object-contain rounded-md border border-[#324054] shadow-[0_12px_36px_rgba(0,0,0,0.45)] select-none',
+            zoomed ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair',
+          ]"
           @wheel.prevent="handleWheel"
           @mousedown="handleMouseDown"
           @mousemove="handleMouseMove"
@@ -414,7 +486,8 @@ const bossBar = computed(
           v-if="zoomPct > 100"
           class="pointer-events-none absolute bottom-2 right-2 px-2 py-1 rounded bg-[#0F172A]/85 border border-[#324054] font-mono text-[10px] text-slate-300"
         >
-          Drag to pan · Reset to fit
+          <span class="pointer-coarse:hidden">Drag to pan · 0 fits</span>
+          <span class="hidden pointer-coarse:inline">Drag to pan · pinch to zoom</span>
         </div>
       </div>
     </div>

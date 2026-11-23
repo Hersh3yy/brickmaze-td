@@ -1,11 +1,20 @@
 <script setup lang="ts">
-import { Eraser, Sparkles, X } from '@lucide/vue';
-import { CLEAR_GRAY_BRICK_COST, TOWER_DEFS, TOWER_LIST } from '~/game/domain/constants';
-import type { Coord, TowerType, TurnFusionOption } from '~/game/domain/types';
+import { ArrowUpCircle, Eraser, Info, Lock, Move, Sparkles, Trash2, X } from '@lucide/vue';
+import {
+  CLEAR_GRAY_BRICK_COST,
+  ELITE_LEVEL,
+  MAX_ELITE_TOWERS,
+  TOWER_DEFS,
+  TOWER_LIST,
+} from '~/game/domain/constants';
+import type { Coord, TargetingMode, TowerType, TurnFusionOption } from '~/game/domain/types';
+import { FUSION_KEYS } from '~/composables/useArenaMatch';
+import { fusedBrickName } from '~/game/domain/synergy';
 import type { TileMenu, TileRect } from '~/composables/useArenaMatch';
 
 // A small menu drawn over the board, next to the tile it acts on, so the player
-// never has to look away from the maze to keep, fuse or build.
+// never has to look away from the maze to keep, fuse, build, upgrade, move or sell.
+// Key hints are hidden on touch screens (pointer-coarse), where they mean nothing.
 
 const props = defineProps<{
   menu: TileMenu;
@@ -13,6 +22,10 @@ const props = defineProps<{
   tileRect: (coord: Coord) => TileRect | null;
   /** Tiles the menu should not cover if it can help it (e.g. the other draft bricks). */
   avoid?: Coord[];
+  /** Tower menu: Sell was pressed once and waits for the second press. */
+  sellArmed?: boolean;
+  /** Towers currently at Elite, for the "x of 2" cap. */
+  eliteCount?: number;
 }>();
 
 const emit = defineEmits<{
@@ -20,6 +33,11 @@ const emit = defineEmits<{
   fuse: [option: TurnFusionOption];
   mount: [type: TowerType];
   remove: [];
+  upgrade: [towerId: string];
+  move: [towerId: string];
+  sell: [towerId: string];
+  targeting: [towerId: string, mode: TargetingMode];
+  details: [];
   close: [];
 }>();
 
@@ -92,33 +110,72 @@ const panelStyle = computed(() => {
   return { left: `${chosen.left}px`, top: `${chosen.top}px`, width: `${w}px` };
 });
 
-const partnerStyle = computed(() => {
-  const partner = hoveredPartner.value;
-  const rect = partner ? props.tileRect(partner) : null;
-  if (!rect) return null;
-  return {
-    left: `${rect.x}px`,
-    top: `${rect.y}px`,
-    width: `${rect.size}px`,
-    height: `${rect.size}px`,
-  };
-});
-
-const title = computed(() => {
-  if (props.menu.kind === 'draft') return 'Keep or fuse here';
-  return props.menu.isGray ? 'Gray wall' : 'Brick';
+/** Every fusion partner gets an outline with its key letter, so touch players see them too. */
+const partnerMarks = computed(() => {
+  if (props.menu.kind !== 'draft') return [];
+  const hovered = hoveredPartner.value;
+  return props.menu.fusions.flatMap((f, idx) => {
+    const rect = props.tileRect(f.partner);
+    if (!rect) return [];
+    const active = hovered !== null && hovered.x === f.partner.x && hovered.y === f.partner.y;
+    return [
+      {
+        key: f.option.id,
+        letter: FUSION_KEYS[idx]?.toUpperCase() ?? '',
+        active,
+        style: {
+          left: `${rect.x}px`,
+          top: `${rect.y}px`,
+          width: `${rect.size}px`,
+          height: `${rect.size}px`,
+        },
+      },
+    ];
+  });
 });
 
 const world = useWorld();
+
+const title = computed(() => {
+  const m = props.menu;
+  if (m.kind === 'draft') return 'Keep this brick?';
+  if (m.kind === 'tower') return world.value.text.towers[m.tower.type].name;
+  return m.isGray ? 'Gray wall: arm it' : 'Arm this brick';
+});
+
+const ammoName = computed(() => {
+  const m = props.menu;
+  if (m.kind !== 'tower' || !m.ammoColors[0]) return '';
+  const [a, b] = m.ammoColors;
+  return b ? fusedBrickName(a, b) : world.value.text.elements[a].elementName;
+});
+
+const tierLabel = computed(() => {
+  const m = props.menu;
+  if (m.kind !== 'tower') return '';
+  return m.tower.level === ELITE_LEVEL ? '★ Elite' : `Tier ${m.tower.level}/3`;
+});
+
+const ITEM =
+  'flex items-center gap-2 w-full min-h-9 px-2 py-1.5 rounded-md text-left cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent';
+const KEY_HINT = 'pointer-coarse:hidden font-mono text-[10px] text-slate-500';
 </script>
 
 <template>
-  <!-- Partner brick of the hovered fusion -->
+  <!-- Fusion partners, lettered like the menu rows -->
   <div
-    v-if="partnerStyle"
-    class="pointer-events-none absolute z-10 rounded-[3px] border-2 border-dashed border-amber-300 bg-amber-300/15"
-    :style="partnerStyle"
-  />
+    v-for="mark in partnerMarks"
+    :key="mark.key"
+    :class="[
+      'pointer-events-none absolute z-10 rounded-[3px] border-2 border-dashed flex items-start justify-end',
+      mark.active ? 'border-amber-200 bg-amber-300/25' : 'border-amber-300/70 bg-amber-300/5',
+    ]"
+    :style="mark.style"
+  >
+    <span class="-mt-2 -mr-2 px-1 rounded bg-amber-300 text-slate-950 font-mono text-[9px] font-bold leading-[14px]">
+      {{ mark.letter }}
+    </span>
+  </div>
 
   <div
     ref="panelRef"
@@ -130,7 +187,8 @@ const world = useWorld();
     @contextmenu.prevent="emit('close')"
   >
     <div class="flex items-center justify-between gap-2 px-3 pt-2 pb-1.5 border-b border-[#2D3A4D]">
-      <span class="font-semibold text-slate-200">{{ title }}</span>
+      <span class="font-semibold text-slate-200 truncate">{{ title }}</span>
+      <span v-if="tierLabel" class="ml-auto font-mono text-[11px] text-amber-300 whitespace-nowrap">{{ tierLabel }}</span>
       <button
         type="button"
         aria-label="Close menu"
@@ -147,20 +205,20 @@ const world = useWorld();
       <button
         type="button"
         role="menuitem"
-        class="flex items-center gap-2 w-full min-h-9 px-2 py-1.5 rounded-md text-left text-slate-100 hover:bg-white/8 cursor-pointer"
+        :class="[ITEM, 'text-slate-100 hover:bg-white/8']"
         title="Keep this brick as a single colour (Enter)"
         @click="emit('keep')"
       >
         <BrickColorGlyph :color="menu.keepColor" size="sm" />
         <span class="flex-1 font-medium">Keep {{ world.text.elements[menu.keepColor].elementName }}</span>
-        <span class="font-mono text-[10px] text-slate-500">Enter</span>
+        <span :class="KEY_HINT">Enter</span>
       </button>
       <button
-        v-for="f in menu.fusions"
+        v-for="(f, fIdx) in menu.fusions"
         :key="f.option.id"
         type="button"
         role="menuitem"
-        class="flex items-center gap-2 w-full min-h-9 px-2 py-1.5 rounded-md text-left text-amber-200 hover:bg-amber-400/12 focus-visible:bg-amber-400/12 cursor-pointer"
+        :class="[ITEM, 'text-amber-200 hover:bg-amber-400/12 focus-visible:bg-amber-400/12']"
         :title="f.option.description"
         @mouseenter="hoveredPartner = f.partner"
         @mouseleave="hoveredPartner = null"
@@ -171,25 +229,26 @@ const world = useWorld();
         <Sparkles class="w-3.5 h-3.5 shrink-0" />
         <BrickColorGlyph :color="f.option.colors[0]" :secondary-color="f.option.colors[1]" size="sm" />
         <span class="flex-1 font-medium leading-tight">{{ f.option.name }}</span>
+        <span class="font-mono text-[10px] text-amber-300/80">{{ FUSION_KEYS[fIdx]?.toUpperCase() }}</span>
       </button>
-      <p class="px-2 pt-1 pb-0.5 text-[10px] text-slate-500 leading-snug">
-        The other bricks harden into gray walls.
+      <p class="px-2 pt-1 pb-0.5 text-[10px] text-slate-400 leading-snug">
+        Fusing uses the lettered brick. The other bricks turn into gray walls.
       </p>
     </div>
 
     <!-- Build: mount a weapon, or remove a gray wall -->
-    <div v-else class="p-1.5 flex flex-col gap-0.5">
+    <div v-else-if="menu.kind === 'build'" class="p-1.5 flex flex-col gap-0.5">
       <button
         v-for="(type, idx) in TOWER_LIST"
         :key="type"
         type="button"
         role="menuitem"
         :disabled="gold < TOWER_DEFS[type].cost"
-        class="flex items-center gap-2 w-full min-h-9 px-2 py-1.5 rounded-md text-left hover:bg-white/8 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        :class="[ITEM, 'hover:bg-white/8']"
         :title="world.text.towers[type].description"
         @click="emit('mount', type)"
       >
-        <span class="font-mono text-[10px] text-slate-500 w-3">{{ idx + 1 }}</span>
+        <span :class="[KEY_HINT, 'w-3']">{{ idx + 1 }}</span>
         <span class="flex-1 min-w-0">
           <span class="block font-semibold text-slate-100 truncate">{{ world.text.towers[type].name }}</span>
           <span class="block text-[10px] text-slate-400 truncate">{{ TOWER_DEFS[type].shortRole }}</span>
@@ -210,7 +269,7 @@ const world = useWorld();
           type="button"
           role="menuitem"
           :disabled="gold < CLEAR_GRAY_BRICK_COST"
-          class="flex items-center gap-2 w-full min-h-9 px-2 py-1.5 rounded-md text-left text-rose-300 hover:bg-rose-500/12 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          :class="[ITEM, 'text-rose-300 hover:bg-rose-500/12']"
           title="Open this tile for the path (Delete)"
           @click="emit('remove')"
         >
@@ -219,6 +278,85 @@ const world = useWorld();
           <span class="font-mono font-bold tabular-nums">{{ CLEAR_GRAY_BRICK_COST }}g</span>
         </button>
       </template>
+    </div>
+
+    <!-- Tower: upgrade, move, sell, targeting -->
+    <div v-else class="p-1.5 flex flex-col gap-1">
+      <div v-if="menu.ammoColors.length" class="flex items-center gap-1.5 px-2 pt-0.5 text-[11px] text-slate-400">
+        <span>Ammo</span>
+        <BrickColorGlyph
+          :color="menu.ammoColors[0]!"
+          :secondary-color="menu.ammoColors[1]"
+          size="sm"
+        />
+        <span class="text-slate-200 truncate">
+          {{ ammoName }}
+        </span>
+      </div>
+      <p v-else class="px-2 pt-0.5 text-[11px] text-slate-400">Plain ammo. Move it onto a colour brick.</p>
+
+      <button
+        v-if="menu.upgradeCost !== null"
+        type="button"
+        role="menuitem"
+        :disabled="gold < menu.upgradeCost || menu.eliteBlocked"
+        :class="[ITEM, 'bg-amber-500/90 text-slate-950 font-semibold hover:bg-amber-400 justify-center']"
+        :title="menu.eliteBlocked ? `Only ${MAX_ELITE_TOWERS} Elite towers at once` : 'Upgrade (U)'"
+        @click="emit('upgrade', menu.tower.id)"
+      >
+        <ArrowUpCircle class="w-3.5 h-3.5 shrink-0" />
+        <span>{{ menu.nextIsElite ? 'Make Elite' : 'Upgrade' }} · {{ menu.upgradeCost }}g</span>
+        <span class="pointer-coarse:hidden ml-auto font-mono text-[10px] text-slate-900/60">U</span>
+      </button>
+      <p v-if="menu.nextIsElite" :class="['px-2 text-[10px]', menu.eliteBlocked ? 'text-rose-300' : 'text-slate-400']">
+        {{ eliteCount ?? 0 }}/{{ MAX_ELITE_TOWERS }} Elites used
+      </p>
+
+      <div class="grid grid-cols-2 gap-1">
+        <button
+          type="button"
+          role="menuitem"
+          :disabled="!menu.canMove"
+          :class="[ITEM, 'bg-white/5 text-slate-100 hover:bg-white/10 justify-center']"
+          :title="menu.canMove ? 'Move for free (M)' : 'Move between waves'"
+          @click="emit('move', menu.tower.id)"
+        >
+          <Move v-if="menu.canMove" class="w-3.5 h-3.5 shrink-0" />
+          <Lock v-else class="w-3.5 h-3.5 shrink-0" />
+          <span>Move</span>
+          <span :class="KEY_HINT">M</span>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          :class="[
+            ITEM,
+            'justify-center',
+            sellArmed ? 'bg-rose-600 text-white hover:bg-rose-500' : 'bg-white/5 text-rose-300 hover:bg-rose-500/15',
+          ]"
+          :title="sellArmed ? 'Press again to sell' : 'Sell (S, press twice)'"
+          @click="emit('sell', menu.tower.id)"
+        >
+          <Trash2 class="w-3.5 h-3.5 shrink-0" />
+          <span class="tabular-nums">{{ sellArmed ? `Sure? +${menu.sellValue}g` : `Sell +${menu.sellValue}g` }}</span>
+        </button>
+      </div>
+
+      <TargetPrioritySwitch
+        v-if="menu.tower.type !== 'pulse'"
+        :value="menu.tower.targeting"
+        :show-fresh="menu.showFresh"
+        @change="emit('targeting', menu.tower.id, $event)"
+      />
+
+      <button
+        type="button"
+        class="lg:hidden flex items-center justify-center gap-1.5 min-h-8 text-[11px] text-slate-400 hover:text-slate-200 cursor-pointer"
+        @click="emit('details')"
+      >
+        <Info class="w-3.5 h-3.5" />
+        <span>Stats & combos</span>
+      </button>
     </div>
   </div>
 </template>

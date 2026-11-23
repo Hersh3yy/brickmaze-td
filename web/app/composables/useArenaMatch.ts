@@ -29,11 +29,16 @@ import {
   eliteCount,
   defaultTargetingFor,
   nextUid,
+  tileAppliesDebuff,
   resetSimState,
   stepSimulation,
 } from '~/game/domain/simulation';
 import type { SimEvents, SimWorld } from '~/game/domain/simulation';
-import { computeBoardSynergyLinks, findFusionOptionsForBrick } from '~/game/domain/synergy';
+import {
+  computeBoardSynergyLinks,
+  findFusionOptionsForBrick,
+  getCellColors,
+} from '~/game/domain/synergy';
 import { waveTitle } from '~/game/worlds';
 import type {
   BrickColor,
@@ -84,6 +89,7 @@ export interface TileRect {
  * The small menu drawn on the board next to the selected tile.
  * - draft: one of this turn's 4 bricks, during the pick step: keep it or fuse into it.
  * - build: an empty brick or gray wall outside the draft: mount a weapon, or remove the wall.
+ * - tower: a mounted weapon: upgrade, move, sell, targeting.
  */
 export type TileMenu =
   | {
@@ -92,7 +98,32 @@ export type TileMenu =
       keepColor: BrickColor;
       fusions: { option: TurnFusionOption; partner: Coord }[];
     }
-  | { kind: 'build'; coord: Coord; isGray: boolean };
+  | { kind: 'build'; coord: Coord; isGray: boolean }
+  | {
+      kind: 'tower';
+      coord: Coord;
+      tower: Tower;
+      /** Colours of the brick under the tower (empty for a gray wall). */
+      ammoColors: BrickColor[];
+      upgradeCost: number | null;
+      nextIsElite: boolean;
+      eliteBlocked: boolean;
+      sellValue: number;
+      canMove: boolean;
+      showFresh: boolean;
+    };
+
+/** Shown for a few seconds after a wave ends. */
+export interface WaveReport {
+  wave: number;
+  livesLost: number;
+  bonusGold: number;
+  /** Bumps on every report so the toast restarts even for equal content. */
+  id: number;
+}
+
+/** Keys that pick a fusion in the keep/fuse menu, in menu order. */
+export const FUSION_KEYS = ['q', 'w', 'e'] as const;
 
 function rollFourBricks(): BrickColor[] {
   const hand: BrickColor[] = [];
@@ -133,6 +164,12 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
   const creepsRemainingUi = ref(0);
   const waveTotalCreepsUi = ref(0);
   const outcomeSummary = shallowRef<MatchSummary | null>(null);
+  /** Tower whose Sell button was pressed once; a second press sells it. */
+  const sellArmedId = ref<string | null>(null);
+  const waveReport = shallowRef<WaveReport | null>(null);
+  const shortcutsOpen = ref(false);
+  /** Plain number, never reactive: lives when the current wave was sent. */
+  let waveStartLives = 0;
 
   const pathResult = computed(() => computeMazePath(grid.value, mapLayout));
   const synergyLinks = computed(() => computeBoardSynergyLinks(grid.value));
@@ -220,7 +257,25 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
 
     if (phase.value !== 'BUILD_MANAGE' && phase.value !== 'COMBAT') return null;
     if (placingTowerType.value || relocatingTowerId.value) return null;
-    if (!isBrickCell(cell) || selectedTower.value) return null;
+    const tower = selectedTower.value;
+    if (tower) {
+      const def = TOWER_DEFS[tower.type];
+      const nextIsElite = tower.level === ELITE_LEVEL - 1;
+      return {
+        kind: 'tower',
+        coord,
+        tower,
+        ammoColors: getCellColors(cell),
+        upgradeCost:
+          tower.level < MAX_TOWER_LEVEL ? def.upgradeCosts[tower.level - 1] ?? null : null,
+        nextIsElite,
+        eliteBlocked: nextIsElite && !canBecomeElite(tower, towers.value),
+        sellValue: Math.round(tower.investedGold * 0.75),
+        canMove: phase.value !== 'COMBAT',
+        showFresh: tileAppliesDebuff(grid.value, tower.x, tower.y),
+      };
+    }
+    if (!isBrickCell(cell)) return null;
     return { kind: 'build', coord, isGray: cell.kind === 'GRAY_WALL' };
   });
 
@@ -296,7 +351,6 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
   let waveStartedAt = 0;
   /** Combat time of the current wave in game seconds (real time x speed multiplier). */
   let waveGameSeconds = 0;
-  let livesAtWaveStart = 0;
   let quitSent = false;
   const counts = {
     towersBuilt: 0,
@@ -366,14 +420,15 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     defeat: (wavesCleared) => {
       void finishMatch(false, wavesCleared);
     },
-    waveCleared: (clearedWave, _clearBonus, final) => {
+    waveCleared: (clearedWave, clearBonus, final) => {
       creepsRemainingUi.value = 0;
+      showWaveReport(clearedWave, clearBonus);
       // The sim writes lives and gold (clear bonus included) to `world`; the refs catch up after the step.
       track('wave-end', {
         wave: clearedWave,
         difficulty,
         livesLeft: world.lives,
-        livesLost: Math.max(0, livesAtWaveStart - world.lives),
+        livesLost: Math.max(0, waveStartLives - world.lives),
         gold: world.gold,
         pathLength: pathResult.value.length,
         towers: towers.value.length,
@@ -450,6 +505,26 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
   }
 
   // --- Player actions ---
+
+  let waveReportTimer: ReturnType<typeof setTimeout> | undefined;
+  function showWaveReport(clearedWave: number, bonusGold: number) {
+    // The sim has written lives to `world`; the ref catches up after this step.
+    waveReport.value = {
+      wave: clearedWave,
+      livesLost: Math.max(0, waveStartLives - world.lives),
+      bonusGold,
+      id: (waveReport.value?.id ?? 0) + 1,
+    };
+    clearTimeout(waveReportTimer);
+    waveReportTimer = setTimeout(() => {
+      waveReport.value = null;
+    }, 3500);
+  }
+
+  // Selecting something else disarms a half-pressed Sell.
+  watch(selectedCoord, () => {
+    sellArmedId.value = null;
+  });
 
   function rerollDraft() {
     if (
@@ -564,11 +639,12 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     const count = beginWave(sim, wave.value, difficulty);
     waveStartedAt = performance.now();
     waveGameSeconds = 0;
-    livesAtWaveStart = lives.value;
     waveTotalCreepsUi.value = count;
     creepsRemainingUi.value = count;
     relocatingTowerId.value = null;
     mobileInspectorOpen.value = false;
+    waveStartLives = lives.value;
+    waveReport.value = null;
     phase.value = 'COMBAT';
     soundEngine.playWaveStart();
   }
@@ -609,7 +685,8 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     gold.value -= def.cost;
     towers.value = [...towers.value, newTower];
     counts.towersBuilt += 1;
-    selectedCoord.value = { x: coord.x, y: coord.y };
+    // Close the menu: the turn's next step is Send, not another popup.
+    selectedCoord.value = null;
     placingTowerType.value = null;
     soundEngine.playPlaceTower();
     return true;
@@ -643,9 +720,16 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     soundEngine.playUpgrade();
   }
 
+  /** First call arms the Sell button, the second (same tower) sells. */
   function sellTower(towerId: string) {
     const target = towers.value.find((t) => t.id === towerId);
     if (!target) return;
+    if (sellArmedId.value !== towerId) {
+      sellArmedId.value = towerId;
+      return;
+    }
+    sellArmedId.value = null;
+    selectedCoord.value = null;
     gold.value += Math.round(target.investedGold * 0.75);
     towers.value = towers.value.filter((t) => t.id !== towerId);
     if (relocatingTowerId.value === towerId) relocatingTowerId.value = null;
@@ -704,7 +788,11 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
         placedTurnCoords.value = nextEntries;
         soundEngine.playBrickSnap();
 
-        if (nextEntries.length >= BRICKS_PER_TURN) phase.value = 'BUILD_PICK';
+        if (nextEntries.length >= BRICKS_PER_TURN) {
+          phase.value = 'BUILD_PICK';
+          // Open keep/fuse on the brick just placed: one tap less per turn.
+          selectDraftBrick(nextEntries.length - 1);
+        }
         return;
       }
       selectedCoord.value = coord;
@@ -756,8 +844,8 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     }
 
     selectedCoord.value = coord;
-    // Bricks and gray walls get the on-board menu; the bottom sheet is for towers.
-    mobileInspectorOpen.value = Boolean(existingTower);
+    // Every tile acts through the on-board menu; the sheet is opened from it for details.
+    mobileInspectorOpen.value = false;
   }
 
   /** Mouse moves fire per pixel; only a change of tile should recompute the path preview. */
@@ -772,6 +860,11 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
   function closeTileMenu() {
     selectedCoord.value = null;
     if (phase.value === 'BUILD_PICK') pickIndex.value = null;
+  }
+
+  /** Phones: the full tower read-out lives in the bottom sheet. */
+  function openTowerDetails() {
+    mobileInspectorOpen.value = true;
   }
 
   function cancelInteraction() {
@@ -823,32 +916,63 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     creepsRemainingUi.value = 0;
     waveTotalCreepsUi.value = 0;
     outcomeSummary.value = null;
+    waveReport.value = null;
+    sellArmedId.value = null;
+    shortcutsOpen.value = false;
+  }
+
+  function selectedTowerId(): string | null {
+    return selectedTower.value?.id ?? null;
   }
 
   function onKeyDown(e: KeyboardEvent) {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    if (e.metaKey && e.key.toLowerCase() !== 'z') return;
+    if (e.ctrlKey && e.key.toLowerCase() !== 'z') return;
+    if (e.altKey) return;
+    if (outcomeSummary.value) return;
 
+    const key = e.key.toLowerCase();
     const selected = selectedCoord.value;
-    if (e.key === 'Escape') {
+    const building = phase.value === 'BUILD_MANAGE' || phase.value === 'COMBAT';
+
+    if (e.key === '?') {
+      shortcutsOpen.value = !shortcutsOpen.value;
+    } else if (e.key === 'Escape') {
+      if (shortcutsOpen.value) {
+        shortcutsOpen.value = false;
+        return;
+      }
       placingTowerType.value = null;
       relocatingTowerId.value = null;
       mobileInspectorOpen.value = false;
       closeTileMenu();
+    } else if (key === 'z' && (phase.value === 'BUILD_PLACE' || phase.value === 'BUILD_PICK')) {
+      e.preventDefault();
+      undoLastBrick();
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
       clearGrayBrick(selected);
     } else if (e.code === 'Space' && phase.value === 'BUILD_MANAGE') {
       e.preventDefault();
       sendWave();
-    } else if (e.key.toLowerCase() === 'r' && phase.value === 'BUILD_PLACE') {
+    } else if (key === 'r' && phase.value === 'BUILD_PLACE') {
       rerollDraft();
-    } else if (e.key.toLowerCase() === 'm' && phase.value !== 'COMBAT' && selected) {
-      const t = towers.value.find((tw) => tw.x === selected.x && tw.y === selected.y);
-      if (t) startRelocate(t.id);
+    } else if (key === 'm' && phase.value !== 'COMBAT' && selectedTowerId()) {
+      startRelocate(selectedTowerId()!);
+    } else if (key === 'u' && building && selectedTowerId()) {
+      upgradeTower(selectedTowerId()!);
+    } else if (key === 's' && building && selectedTowerId()) {
+      sellTower(selectedTowerId()!);
     } else if (phase.value === 'BUILD_PICK') {
       const idx = Number(e.key) - 1;
+      const fusionIdx = (FUSION_KEYS as readonly string[]).indexOf(key);
+      const menu = tileMenu.value;
       if (idx >= 0 && idx < BRICKS_PER_TURN) selectDraftBrick(idx);
       else if (e.key === 'Enter') keepSelectedBrick();
-    } else if (phase.value === 'BUILD_MANAGE' || phase.value === 'COMBAT') {
+      else if (fusionIdx >= 0 && menu?.kind === 'draft' && menu.fusions[fusionIdx]) {
+        fuseTurnPair(menu.fusions[fusionIdx]!.option);
+      }
+    } else if (building) {
       const type = TOWER_LIST[Number(e.key) - 1];
       if (type && tileMenu.value?.kind === 'build') placeTowerOnSelected(type);
       else if (type) selectTowerType(type);
@@ -865,6 +989,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
   onBeforeUnmount(() => {
     trackQuit();
     cancelAnimationFrame(rafId);
+    clearTimeout(waveReportTimer);
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('pagehide', trackQuit);
   });
@@ -891,6 +1016,9 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     creepsRemainingUi,
     waveTotalCreepsUi,
     outcomeSummary,
+    sellArmedId,
+    waveReport,
+    shortcutsOpen,
     // derived
     pathResult,
     fusionOptions,
@@ -921,6 +1049,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     hoverTile,
     cancelInteraction,
     closeTileMenu,
+    openTowerDetails,
     toggleMute,
     setSpeed,
     continueEndless,

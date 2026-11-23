@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Lock, Play, User } from '@lucide/vue';
+import { ChevronDown, Lock, Play, User } from '@lucide/vue';
 import {
   BOARD_THEMES,
   BRICK_COLOR_LIST,
@@ -169,12 +169,9 @@ onMounted(() => {
           />
           <div
             v-else
-            class="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#1D2531] to-[#11161D] p-8 text-center"
-          >
-            <span class="font-display text-2xl font-bold text-slate-200">
-              BrickMaze TD Tactical Baseplate
-            </span>
-          </div>
+            aria-hidden="true"
+            class="w-full h-full bg-gradient-to-br from-[#1D2531] to-[#11161D] bg-[length:28px_28px] [background-image:linear-gradient(rgba(148,163,184,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.06)_1px,transparent_1px)]"
+          />
           <div class="absolute inset-0 bg-gradient-to-t from-[#161B22] via-[#161B22]/45 to-transparent" />
           <div class="absolute bottom-0 inset-x-0 p-4 sm:p-6 space-y-2">
             <h1
@@ -258,9 +255,18 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="space-y-2 pt-2 border-t border-[#2C384B]">
+          <!-- Looks only: folded so Start stays in view -->
+          <details class="group pt-2 border-t border-[#2C384B]">
+            <summary class="flex items-center justify-between gap-2 cursor-pointer list-none [&::-webkit-details-marker]:hidden min-h-[40px]">
+              <span class="text-sm font-bold text-slate-100">03. Looks</span>
+              <span class="flex items-center gap-1.5 text-xs text-slate-400">
+                {{ world.name }} · {{ world.boards[profile.selectedTheme].name }}
+                <ChevronDown class="w-4 h-4 transition-transform group-open:rotate-180" />
+              </span>
+            </summary>
+          <div class="space-y-2 pt-3">
             <div class="flex items-center justify-between">
-              <h2 class="text-sm font-bold text-slate-100">03. World</h2>
+              <h3 class="text-sm font-bold text-slate-100">World</h3>
               <span class="text-xs text-slate-400">Cosmetic · same rules</span>
             </div>
             <div class="space-y-2">
@@ -277,9 +283,9 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="space-y-2 pt-2 border-t border-[#2C384B]">
+          <div class="space-y-2 pt-3">
             <div class="flex items-center justify-between">
-              <h2 class="text-sm font-bold text-slate-100">04. Board</h2>
+              <h3 class="text-sm font-bold text-slate-100">Board</h3>
               <span class="text-xs text-slate-400">Cosmetic</span>
             </div>
             <div class="grid grid-cols-2 gap-2">
@@ -308,9 +314,12 @@ onMounted(() => {
               </button>
             </div>
           </div>
+          </details>
         </div>
-
-        <div class="pt-2 space-y-2">
+        <!-- Phones: the button sticks to the bottom of the screen while scrolling -->
+        <div
+          class="sticky bottom-0 -mx-4 sm:mx-0 px-4 sm:px-0 py-3 sm:py-0 sm:pt-2 bg-[#1D2531]/95 sm:bg-transparent border-t border-[#2C384B] sm:border-0 lg:static"
+        >
           <TactileButton variant="primary" size="lg" full-width @click="startMatch">
             <Play class="w-4 h-4 fill-current" />
             <span>Start {{ activeDiff.label }} Match</span>
