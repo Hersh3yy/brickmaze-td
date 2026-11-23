@@ -16,6 +16,9 @@ export type TowerType = 'repeater' | 'cannon' | 'sniper' | 'pulse';
 
 // 'fresh' = like 'first', but prefers creeps that do not already carry this tower's
 // slow / poison / burn, so effect towers spread their debuffs instead of stacking them.
+/** 1-3 are the normal tiers; 4 is Elite (expensive, at most MAX_ELITE_TOWERS at once). */
+export type TowerLevel = 1 | 2 | 3 | 4;
+
 export type TargetingMode = 'first' | 'strongest' | 'closest' | 'fresh';
 
 export type GamePhase =
@@ -59,7 +62,7 @@ export interface GridCell {
 export interface Tower {
   id: string;
   type: TowerType;
-  level: 1 | 2 | 3;
+  level: TowerLevel;
   x: number;
   y: number;
   targeting: TargetingMode;

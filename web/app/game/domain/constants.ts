@@ -5,6 +5,7 @@ import type {
   DifficultyId,
   MapLayoutId,
   SynergyInfo,
+  TowerLevel,
   TowerType,
   WaveDefinition,
   WaveModifier,
@@ -125,7 +126,8 @@ export interface TowerDefinition {
   type: TowerType;
   shortRole: string;
   cost: number;
-  upgradeCosts: [number, number];
+  /** Cost to reach tier 2, tier 3 and Elite (tier 4). */
+  upgradeCosts: [number, number, number];
   baseDamage: number;
   baseRange: number;
   baseFireRate: number;
@@ -142,7 +144,7 @@ export const TOWER_DEFS: Record<TowerType, TowerDefinition> = {
     type: 'repeater',
     shortRole: 'Twin Rapid',
     cost: 45,
-    upgradeCosts: [65, 125],
+    upgradeCosts: [65, 125, 750],
     baseDamage: 14,
     baseRange: 3.2,
     baseFireRate: 2.35,
@@ -155,7 +157,7 @@ export const TOWER_DEFS: Record<TowerType, TowerDefinition> = {
     type: 'cannon',
     shortRole: 'Arcing Blast',
     cost: 65,
-    upgradeCosts: [90, 165],
+    upgradeCosts: [90, 165, 1000],
     baseDamage: 38,
     baseRange: 4.1,
     baseFireRate: 0.72,
@@ -168,7 +170,7 @@ export const TOWER_DEFS: Record<TowerType, TowerDefinition> = {
     type: 'pulse',
     shortRole: 'Nova Ring',
     cost: 75,
-    upgradeCosts: [100, 180],
+    upgradeCosts: [100, 180, 1080],
     baseDamage: 24,
     baseRange: 2.35,
     baseFireRate: 0.95,
@@ -181,7 +183,7 @@ export const TOWER_DEFS: Record<TowerType, TowerDefinition> = {
     type: 'sniper',
     shortRole: 'Armor Pierce',
     cost: 85,
-    upgradeCosts: [115, 210],
+    upgradeCosts: [115, 210, 1260],
     baseDamage: 62,
     baseRange: 5.4,
     baseFireRate: 0.62,
@@ -262,6 +264,35 @@ export const BOARD_THEMES: Record<BoardThemeId, BoardThemeDefinition> = {
   midnight_workshop: { id: 'midnight_workshop', unlockLevel: 2 },
   retro_handheld: { id: 'retro_handheld', unlockLevel: 4 },
   volcanic_forge: { id: 'volcanic_forge', unlockLevel: 6 },
+};
+
+// --- Tower tiers -----------------------------------------------------------
+export const MAX_TOWER_LEVEL: TowerLevel = 4;
+export const ELITE_LEVEL: TowerLevel = 4;
+/** Elite towers are a late-game gold sink: expensive, and only this many at once. */
+export const MAX_ELITE_TOWERS = 2;
+
+/** Base stat multipliers per tier. Elite also amplifies its brick's element (ELITE_AMPLIFY). */
+export const TOWER_LEVEL_SCALES: Record<TowerLevel, { damage: number; fireRate: number; range: number }> = {
+  1: { damage: 1, fireRate: 1, range: 1 },
+  2: { damage: 1.6, fireRate: 1.15, range: 1.1 },
+  3: { damage: 2.4, fireRate: 1.32, range: 1.2 },
+  4: { damage: 3.2, fireRate: 1.45, range: 1.3 },
+};
+
+/**
+ * What Elite does to the tower's existing abilities: the bonuses its brick gives are
+ * stronger, it gains extra lightning jumps if it already chains, and crits more.
+ * It never adds an ability the tower did not have.
+ */
+export const ELITE_AMPLIFY = {
+  /** Multiplies the elemental part of damage, fire rate, splash, burn and poison. */
+  elementPower: 1.5,
+  /** Extra chain jumps, only if the tower already chains. */
+  extraChains: 2,
+  /** Added to slow, only if the tower already slows (capped at 75%). */
+  extraSlow: 0.1,
+  extraCrit: 0.1,
 };
 
 // --- Wave specials -------------------------------------------------------

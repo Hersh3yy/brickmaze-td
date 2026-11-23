@@ -11,6 +11,8 @@ import {
   BRICKS_PER_TURN,
   BRICK_COLOR_LIST,
   DIFFICULTY_DEFS,
+  ELITE_LEVEL,
+  MAX_TOWER_LEVEL,
   MAX_WAVES,
   TOWER_DEFS,
 } from '../app/game/domain/constants';
@@ -18,6 +20,7 @@ import { computeMazePath, createInitialGrid, isBrickCell } from '../app/game/dom
 import {
   beginWave,
   cachedTileModifiers,
+  canBecomeElite,
   createSimState,
   defaultTargetingFor,
   stepSimulation,
@@ -31,6 +34,7 @@ import type {
   GridCell,
   MapLayoutId,
   Tower,
+  TowerLevel,
   TowerType,
 } from '../app/game/domain/types';
 
@@ -90,9 +94,6 @@ export function mulberry32(seed: number) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-
-const LEVEL_DAMAGE = [1, 1.6, 2.4];
-const LEVEL_RANGE = [1, 1.1, 1.2];
 
 /** How many path tiles a weapon of `range` tiles standing on (x, y) can reach. */
 function coverage(path: Coord[], x: number, y: number, range: number): number {
@@ -202,7 +203,8 @@ function spend(
     let pick: Tower | null = null;
     let pickScore = -1;
     for (const t of towers) {
-      if (t.level >= 3) continue;
+      if (t.level >= MAX_TOWER_LEVEL) continue;
+      if (t.level === ELITE_LEVEL - 1 && !canBecomeElite(t, towers)) continue;
       const cost = TOWER_DEFS[t.type].upgradeCosts[t.level - 1]!;
       if (cost > state.gold) continue;
       const score = coverage(path, t.x, t.y, TOWER_DEFS[t.type].baseRange);
@@ -215,7 +217,7 @@ function spend(
     const cost = TOWER_DEFS[pick.type].upgradeCosts[pick.level - 1]!;
     state.gold -= cost;
     pick.investedGold += cost;
-    pick.level = (pick.level + 1) as 1 | 2 | 3;
+    pick.level = (pick.level + 1) as TowerLevel;
     return true;
   };
 

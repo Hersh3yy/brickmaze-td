@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { DIFFICULTY_DEFS, getWaveDefinition } from '~/game/domain/constants'
 import { computeMazePath, createInitialGrid } from '~/game/domain/pathfinding'
-import { beginWave, createSimState, stepSimulation } from '~/game/domain/simulation'
+import {
+  beginWave,
+  cachedTileModifiers,
+  canBecomeElite,
+  createSimState,
+  eliteCount,
+  eliteModifiers,
+  stepSimulation,
+} from '~/game/domain/simulation'
 import type { SimWorld } from '~/game/domain/simulation'
 import type { DifficultyId, GridCell, Tower, TowerType } from '~/game/domain/types'
 
@@ -186,5 +194,32 @@ describe('wave specials', () => {
       stepSimulation(sim, world, 1 / 60, 99999 + k, {}, mulberry32(5 + k))
     }
     expect(sim.rallyMult).toBeLessThanOrEqual(1.4 + 1e-9)
+  })
+})
+
+describe('elite towers', () => {
+  it('allows at most two Elites, and only from tier 3', () => {
+    const t3a = { ...tower('a', 'repeater', 1, 1), level: 3 as const }
+    const t3b = { ...tower('b', 'cannon', 2, 1), level: 3 as const }
+    const t2 = { ...tower('c', 'sniper', 3, 1), level: 2 as const }
+    expect(canBecomeElite(t3a, [t3a, t3b, t2])).toBe(true)
+    expect(canBecomeElite(t2, [t3a, t3b, t2])).toBe(false)
+    const e1 = { ...t3a, level: 4 as const }
+    const e2 = { ...t3b, level: 4 as const }
+    const t3c = { ...tower('d', 'pulse', 4, 1), level: 3 as const }
+    expect(eliteCount([e1, e2, t3c])).toBe(2)
+    expect(canBecomeElite(t3c, [e1, e2, t3c])).toBe(false)
+  })
+
+  it('amplifies only abilities the tower already has', () => {
+    const grid = createInitialGrid('crossroad')
+    const spot = { x: 5, y: 6 }
+    grid[spot.y]![spot.x] = { x: spot.x, y: spot.y, kind: 'ACTIVE_BRICK', color: 'yellow' }
+    const base = cachedTileModifiers(grid, spot.x, spot.y)
+    const elite = eliteModifiers(base)
+    expect(elite.chainCount).toBe(base.chainCount + 2) // lightning already chains
+    expect(elite.fireRateMult - 1).toBeCloseTo((base.fireRateMult - 1) * 1.5, 5)
+    expect(elite.slowFactor).toBe(0) // a lightning brick never slows, Elite or not
+    expect(elite.critChance).toBeCloseTo(base.critChance + 0.1, 5)
   })
 })

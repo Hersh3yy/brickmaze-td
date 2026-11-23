@@ -7,6 +7,7 @@ import {
   GRID_ROWS,
   TILE_SIZE,
   TOWER_DEFS,
+  TOWER_LEVEL_SCALES,
 } from '../domain/constants';
 import type {
   BeamEffect,
@@ -641,7 +642,7 @@ function drawLevelPips(ctx: CanvasRenderingContext2D, tower: Tower) {
     const ly = tower.y * TILE_SIZE + TILE_SIZE - 6;
     ctx.fillStyle = '#0F172A';
     ctx.fillRect(lx - 1, ly - 1, 6, 5);
-    ctx.fillStyle = tower.level === 3 ? '#FDE047' : '#F8FAFC';
+    ctx.fillStyle = tower.level >= 4 ? '#F0ABFC' : tower.level === 3 ? '#FDE047' : '#F8FAFC';
     ctx.fillRect(lx, ly, 4, 3);
   }
 }
@@ -1052,7 +1053,7 @@ export function renderArenaFrame(ctx: CanvasRenderingContext2D, frame: RenderFra
   if (selectedTower) {
     const mods = computeTileModifiers(frame.grid, selectedTower.x, selectedTower.y);
     const def = TOWER_DEFS[selectedTower.type];
-    const levelRangeMult = 1 + (selectedTower.level - 1) * 0.1;
+    const levelRangeMult = TOWER_LEVEL_SCALES[selectedTower.level].range;
     const rangePx = def.baseRange * levelRangeMult * mods.rangeMult * TILE_SIZE;
     const cx = selectedTower.x * TILE_SIZE + TILE_SIZE / 2;
     const cy = selectedTower.y * TILE_SIZE + TILE_SIZE / 2;

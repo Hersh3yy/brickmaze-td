@@ -4,11 +4,16 @@ import {
   BRICK_COLOR_LIST,
   CLEAR_GRAY_BRICK_COST,
   DIFFICULTY_DEFS,
+  ELITE_AMPLIFY,
+  ELITE_LEVEL,
+  MAX_ELITE_TOWERS,
+  MAX_TOWER_LEVEL,
   SYNERGY_CATALOG,
   TOWER_DEFS,
+  TOWER_LEVEL_SCALES,
   getWaveDefinition,
 } from '~/game/domain/constants';
-import { tileAppliesDebuff } from '~/game/domain/simulation';
+import { tileAppliesDebuff, towerModifiers } from '~/game/domain/simulation';
 import { computeTileModifiers } from '~/game/domain/synergy';
 import { waveTitle } from '~/game/worlds';
 import type {
@@ -29,6 +34,8 @@ const props = defineProps<{
   phase: GamePhase;
   selectedCell: GridCell | null;
   selectedTower: Tower | null;
+  /** Towers currently at Elite, for the "x of 2" cap. */
+  eliteCount: number;
   relocatingTowerId: string | null;
 }>();
 
@@ -68,10 +75,13 @@ const towerView = computed(() => {
   if (!tower) return null;
 
   const def = TOWER_DEFS[tower.type];
-  const mods = computeTileModifiers(props.grid, tower.x, tower.y);
-  const dmgScale = tower.level === 1 ? 1 : tower.level === 2 ? 1.6 : 2.4;
-  const rateScale = tower.level === 1 ? 1 : tower.level === 2 ? 1.15 : 1.32;
-  const rangeScale = 1 + (tower.level - 1) * 0.1;
+  const mods = towerModifiers(props.grid, tower);
+  const scales = TOWER_LEVEL_SCALES[tower.level];
+  const dmgScale = scales.damage;
+  const rateScale = scales.fireRate;
+  const rangeScale = scales.range;
+  const isElite = tower.level === ELITE_LEVEL;
+  const nextIsElite = tower.level === ELITE_LEVEL - 1;
 
   return {
     tower,
@@ -80,7 +90,10 @@ const towerView = computed(() => {
     finalDmg: Math.round(def.baseDamage * dmgScale * mods.damageMult),
     finalRate: (def.baseFireRate * rateScale * mods.fireRateMult).toFixed(1),
     finalRange: (def.baseRange * rangeScale * mods.rangeMult).toFixed(1),
-    upgradeCost: tower.level < 3 ? def.upgradeCosts[tower.level - 1] ?? null : null,
+    upgradeCost: tower.level < MAX_TOWER_LEVEL ? def.upgradeCosts[tower.level - 1] ?? null : null,
+    isElite,
+    nextIsElite,
+    eliteBlocked: nextIsElite && props.eliteCount >= MAX_ELITE_TOWERS,
     sellValue: Math.round(tower.investedGold * 0.75),
     isRelocatingThis: props.relocatingTowerId === tower.id,
     showFresh: tileAppliesDebuff(props.grid, tower.x, tower.y),
@@ -144,7 +157,8 @@ const isPreBoss = computed(() => props.wave % 5 === 4);
       <div class="flex items-center justify-between gap-2">
         <h3 class="text-base font-bold text-slate-100">{{ world.text.towers[towerView.tower.type].name }}</h3>
         <div class="flex items-center gap-2">
-          <span class="font-mono text-xs text-amber-300">Tier {{ towerView.tower.level }}/3</span>
+          <span v-if="towerView.isElite" class="font-mono text-xs font-bold text-fuchsia-300">★ Elite</span>
+          <span v-else class="font-mono text-xs text-amber-300">Tier {{ towerView.tower.level }}/3</span>
           <button type="button" aria-label="Close panel" :class="CLOSE_BTN_CLASS" @click="emit('closeMobile')">
             <X class="w-4 h-4" />
           </button>
@@ -231,13 +245,23 @@ const isPreBoss = computed(() => props.wave % 5 === 4);
         v-if="towerView.upgradeCost !== null"
         variant="amber"
         full-width
-        :disabled="gold < towerView.upgradeCost"
+        :disabled="gold < towerView.upgradeCost || towerView.eliteBlocked"
         @click="emit('upgradeTower', towerView.tower.id)"
       >
         <ArrowUpCircle class="w-4 h-4" />
-        <span>Upgrade · {{ towerView.upgradeCost }}g</span>
+        <span>{{ towerView.nextIsElite ? 'Make Elite' : 'Upgrade' }} · {{ towerView.upgradeCost }}g</span>
       </TactileButton>
-      <div v-else class="text-xs text-center font-mono text-amber-300 py-1">Max Tier</div>
+      <p v-if="towerView.nextIsElite" class="text-[11px] leading-snug text-slate-400">
+        <span class="text-fuchsia-300 font-semibold">Elite</span> amplifies what this tower already does:
+        element bonuses ×{{ ELITE_AMPLIFY.elementPower }}, +{{ ELITE_AMPLIFY.extraChains }} chain jumps if it chains,
+        more slow if it slows, +{{ Math.round(ELITE_AMPLIFY.extraCrit * 100) }}% crit.
+        <span :class="towerView.eliteBlocked ? 'text-rose-300' : 'text-slate-300'">
+          {{ eliteCount }}/{{ MAX_ELITE_TOWERS }} Elites used.
+        </span>
+      </p>
+      <div v-if="towerView.isElite" class="text-xs text-center font-mono text-fuchsia-300 py-1">
+        Elite · max tier
+      </div>
 
       <TactileButton v-if="towerView.isRelocatingThis" variant="secondary" full-width @click="emit('cancelRelocate')">
         Cancel Move

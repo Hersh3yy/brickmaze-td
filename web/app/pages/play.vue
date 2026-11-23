@@ -33,6 +33,7 @@ const {
   hoverPreview,
   selectedCell,
   selectedTower,
+  eliteTowerCount,
   tileMenu,
   bossPreview,
   frame,
@@ -133,6 +134,7 @@ function exitToLobby() {
         :phase="phase"
         :selected-cell="selectedCell"
         :selected-tower="selectedTower"
+        :elite-count="eliteTowerCount"
         :relocating-tower-id="relocatingTowerId"
         @upgrade-tower="upgradeTower"
         @start-relocate="startRelocate"

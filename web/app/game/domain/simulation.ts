@@ -7,6 +7,10 @@
 
 import {
   BRICK_COLORS,
+  ELITE_AMPLIFY,
+  ELITE_LEVEL,
+  MAX_ELITE_TOWERS,
+  TOWER_LEVEL_SCALES,
   HERO_BOUNTY_MULT,
   HERO_HP_MULT,
   HERO_LIVES_COST,
@@ -180,6 +184,44 @@ export function cachedTileModifiers(grid: GridCell[][], x: number, y: number): T
     byTile.set(key, mods);
   }
   return mods;
+}
+
+/** Elite amplification of a tile's bonuses; cached per source object like the bonuses. */
+const eliteModsCache = new WeakMap<TileCombatModifiers, TileCombatModifiers>();
+
+export function eliteModifiers(base: TileCombatModifiers): TileCombatModifiers {
+  let m = eliteModsCache.get(base);
+  if (m) return m;
+  const amp = ELITE_AMPLIFY.elementPower;
+  m = {
+    ...base,
+    damageMult: 1 + (base.damageMult - 1) * amp,
+    fireRateMult: 1 + (base.fireRateMult - 1) * amp,
+    extraSplashRadius: base.extraSplashRadius * amp,
+    burnDpsRatio: base.burnDpsRatio * amp,
+    poisonDpsRatio: base.poisonDpsRatio * amp,
+    chainCount: base.chainCount > 0 ? base.chainCount + ELITE_AMPLIFY.extraChains : 0,
+    slowFactor: base.slowFactor > 0 ? Math.min(0.75, base.slowFactor + ELITE_AMPLIFY.extraSlow) : 0,
+    slowDuration: base.slowDuration * (base.slowFactor > 0 ? 1.25 : 1),
+    critChance: base.critChance + ELITE_AMPLIFY.extraCrit,
+  };
+  eliteModsCache.set(base, m);
+  return m;
+}
+
+/** The bonuses a tower actually fires with: its tile's, amplified if it is Elite. */
+export function towerModifiers(grid: GridCell[][], tower: Tower): TileCombatModifiers {
+  const base = cachedTileModifiers(grid, tower.x, tower.y);
+  return tower.level === ELITE_LEVEL ? eliteModifiers(base) : base;
+}
+
+export function eliteCount(towers: Tower[]): number {
+  return towers.reduce((n, t) => n + (t.level === ELITE_LEVEL ? 1 : 0), 0);
+}
+
+/** Whether this tower may be promoted to Elite right now (gold aside). */
+export function canBecomeElite(tower: Tower, towers: Tower[]): boolean {
+  return tower.level === ELITE_LEVEL - 1 && eliteCount(towers) < MAX_ELITE_TOWERS;
 }
 
 /** Default targeting for a tower on (x, y): venom-loaded towers spread their debuff. */
@@ -564,10 +606,11 @@ export function stepSimulation(
     if (tower.cooldown > 0) continue;
 
     const def = TOWER_DEFS[tower.type];
-    const mods = cachedTileModifiers(world.grid, tower.x, tower.y);
-    const dmgScale = tower.level === 1 ? 1 : tower.level === 2 ? 1.6 : 2.4;
-    const rateScale = tower.level === 1 ? 1 : tower.level === 2 ? 1.15 : 1.32;
-    const rangeScale = 1 + (tower.level - 1) * 0.1;
+    const mods = towerModifiers(world.grid, tower);
+    const scales = TOWER_LEVEL_SCALES[tower.level];
+    const dmgScale = scales.damage;
+    const rateScale = scales.fireRate;
+    const rangeScale = scales.range;
 
     const rangePx = def.baseRange * rangeScale * mods.rangeMult * TILE_SIZE;
     const cx = tower.x * TILE_SIZE + TILE_SIZE / 2;

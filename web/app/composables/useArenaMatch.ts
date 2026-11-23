@@ -13,6 +13,8 @@ import {
   BRICK_COLOR_LIST,
   CLEAR_GRAY_BRICK_COST,
   DIFFICULTY_DEFS,
+  ELITE_LEVEL,
+  MAX_TOWER_LEVEL,
   TOWER_DEFS,
   TOWER_LIST,
   getProfilePerks,
@@ -22,7 +24,9 @@ import { soundEngine } from '~/game/domain/audio';
 import { computeMazePath, createInitialGrid, isBrickCell } from '~/game/domain/pathfinding';
 import {
   beginWave,
+  canBecomeElite,
   createSimState,
+  eliteCount,
   defaultTargetingFor,
   nextUid,
   resetSimState,
@@ -43,6 +47,7 @@ import type {
   PlayerProfile,
   TargetingMode,
   Tower,
+  TowerLevel,
   TowerType,
   TurnFusionOption,
 } from '~/game/domain/types';
@@ -189,6 +194,9 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     const c = selectedCoord.value;
     return c ? towers.value.find((t) => t.x === c.x && t.y === c.y) ?? null : null;
   });
+  /** How many towers are Elite (capped at MAX_ELITE_TOWERS). */
+  const eliteTowerCount = computed(() => eliteCount(towers.value));
+
   const tileMenu = computed<TileMenu | null>(() => {
     const coord = selectedCoord.value;
     if (!coord) return null;
@@ -534,14 +542,19 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
 
   function upgradeTower(towerId: string) {
     const target = towers.value.find((t) => t.id === towerId);
-    if (!target || target.level >= 3) return;
+    if (!target || target.level >= MAX_TOWER_LEVEL) return;
+    // Elite (the last tier) is capped: at most MAX_ELITE_TOWERS at once.
+    if (target.level === ELITE_LEVEL - 1 && !canBecomeElite(target, towers.value)) {
+      soundEngine.playInvalid();
+      return;
+    }
     const cost = TOWER_DEFS[target.type].upgradeCosts[target.level - 1]!;
     if (gold.value < cost) return;
 
     gold.value -= cost;
     towers.value = towers.value.map((t) =>
       t.id === towerId
-        ? { ...t, level: (t.level + 1) as 1 | 2 | 3, investedGold: t.investedGold + cost }
+        ? { ...t, level: (t.level + 1) as TowerLevel, investedGold: t.investedGold + cost }
         : t
     );
     soundEngine.playUpgrade();
@@ -793,6 +806,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     hoverPreview,
     selectedCell,
     selectedTower,
+    eliteTowerCount,
     tileMenu,
     bossPreview,
     // renderer input (plain object, never make this reactive)
