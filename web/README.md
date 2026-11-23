@@ -41,3 +41,25 @@ sounds are synthesised, sprites are drawn in code.
 - `noUncheckedIndexedAccess` is off in `nuxt.config.ts` for the ported game code.
 - The lobby hero and emblem images were not part of the AI Studio download. Drop them in
   `public/images/brickmaze_hero.jpg` and `brickmaze_emblem.jpg`; until then a fallback shows.
+
+## Analytics
+
+Umami (cloud) is loaded in `nuxt.config.ts` and only counts `some-td.netlify.app`, so
+localhost and deploy previews send nothing. Events go through `app/utils/track.ts`, which
+does nothing when Umami is missing and never throws. Umami groups events into cookieless
+visit sessions, so one session's timeline reads as the story of a run. Data is flat
+(strings, numbers, booleans) with no personal data or free text.
+
+| Event | Fires in | Data |
+| --- | --- | --- |
+| `match-start` | `startMatch()` in `pages/index.vue` | difficulty, map, world, theme |
+| `wave-end` | `simEvents.waveCleared` in `useArenaMatch.ts`, every wave incl. the last | wave, difficulty, livesLeft, livesLost, gold, pathLength, towers, elites, synergies, seconds, speed, endless |
+| `match-end` | `finishMatch()` in `useArenaMatch.ts` (win or loss) | won, difficulty, map, wavesCleared, kills, synergies, longestPath, minutes, towersBuilt, upgrades, elitesBuilt, sells, rerolls, fusions, relocates |
+| `match-quit` | leaving `/play` (unmount or `pagehide`) before the match ended, once | wave, phase, minutes |
+| `endless-continue` | `continueEndless()` | wave, difficulty |
+| `play-again` | `playAgain()` | wave, difficulty |
+| `profile-transfer` | `TransferCodeField.vue`, after a successful copy or import | action (`export` or `import`) |
+
+The action totals in `match-end` are plain counters in `useArenaMatch.ts`, not refs, for
+the same frame-rate reason as the rest of the match state. `seconds` and `minutes` are
+real time, so a wave at 3x speed is shorter.

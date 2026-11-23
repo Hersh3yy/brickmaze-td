@@ -37,6 +37,15 @@ export default defineNuxtConfig({
       bodyAttrs: {
         class: 'bg-[#161B22] text-[#F1F5F9] antialiased selection:bg-amber-500/30 selection:text-amber-100',
       },
+      script: [
+        {
+          src: 'https://cloud.umami.is/script.js',
+          'data-website-id': '1063d8c8-022b-416d-a291-57deacbcd52f',
+          // Only count the live site, not localhost or Netlify deploy previews.
+          'data-domains': 'some-td.netlify.app',
+          defer: true,
+        },
+      ],
     },
   },
 })

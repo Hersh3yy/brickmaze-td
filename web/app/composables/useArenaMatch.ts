@@ -289,9 +289,59 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     frame.placingTowerType = placingTowerType.value;
   });
 
+  // --- Analytics (Umami, see utils/track.ts). Plain variables, never reactive. ---
+  // One match tells its story as match-start, a wave-end per wave, then match-end or
+  // match-quit. Player actions are counted here and sent once, with match-end.
+  let matchStartedAt = performance.now();
+  let waveStartedAt = 0;
+  let livesAtWaveStart = 0;
+  let quitSent = false;
+  const counts = {
+    towersBuilt: 0,
+    upgrades: 0,
+    elitesBuilt: 0,
+    sells: 0,
+    rerolls: 0,
+    fusions: 0,
+    relocates: 0,
+  };
+
+  function resetAnalytics() {
+    matchStartedAt = performance.now();
+    waveStartedAt = 0;
+    quitSent = false;
+    for (const key of Object.keys(counts) as (keyof typeof counts)[]) counts[key] = 0;
+  }
+
+  function minutesSince(start: number): number {
+    return Math.round((performance.now() - start) / 6000) / 10;
+  }
+
+  /** Leaving /play (route change or closing the tab) before the match ended. Sent once. */
+  function trackQuit() {
+    if (quitSent || sim.matchEnded) return;
+    quitSent = true;
+    track('match-quit', {
+      wave: wave.value,
+      phase: phase.value,
+      minutes: minutesSince(matchStartedAt),
+    });
+  }
+
   async function finishMatch(won: boolean, wavesCleared: number) {
     if (sim.matchEnded) return;
     sim.matchEnded = true;
+    track('match-end', {
+      won,
+      difficulty,
+      map: mapLayout,
+      wavesCleared,
+      kills: sim.totalKills,
+      synergies: synergyLinks.value.length,
+      longestPath: sim.longestPathSeen,
+      minutes: minutesSince(matchStartedAt),
+      ...counts,
+    });
     phase.value = won ? 'VICTORY' : 'GAME_OVER';
     if (won) soundEngine.playVictory();
     else soundEngine.playDefeat();
@@ -314,6 +364,21 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     },
     waveCleared: (clearedWave, _clearBonus, final) => {
       creepsRemainingUi.value = 0;
+      // The sim writes lives and gold (clear bonus included) to `world`; the refs catch up after the step.
+      track('wave-end', {
+        wave: clearedWave,
+        difficulty,
+        livesLeft: world.lives,
+        livesLost: Math.max(0, livesAtWaveStart - world.lives),
+        gold: world.gold,
+        pathLength: pathResult.value.length,
+        towers: towers.value.length,
+        elites: eliteTowerCount.value,
+        synergies: synergyLinks.value.length,
+        seconds: Math.round((performance.now() - waveStartedAt) / 1000),
+        speed: speed.value,
+        endless: endlessMode.value,
+      });
       if (final) {
         void finishMatch(true, clearedWave);
         return;
@@ -387,6 +452,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
       return;
     }
     rerollsRemaining.value -= 1;
+    counts.rerolls += 1;
     draftQueue.value = rollFourBricks();
     soundEngine.playBrickSnap();
   }
@@ -458,7 +524,10 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
   /** BUILD_PICK step 2b: fuse a partner into the selected brick, which stays where it is. */
   function fuseTurnPair(option: TurnFusionOption) {
     if (phase.value !== 'BUILD_PICK') return;
-    if (resolveDraft(option.anchorIndex, option)) soundEngine.playFuseMaster();
+    if (resolveDraft(option.anchorIndex, option)) {
+      counts.fusions += 1;
+      soundEngine.playFuseMaster();
+    }
   }
 
   function clearGrayBrick(coord: Coord) {
@@ -485,6 +554,8 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
   function sendWave() {
     if (phase.value !== 'BUILD_MANAGE') return;
     const count = beginWave(sim, wave.value, difficulty);
+    waveStartedAt = performance.now();
+    livesAtWaveStart = lives.value;
     waveTotalCreepsUi.value = count;
     creepsRemainingUi.value = count;
     relocatingTowerId.value = null;
@@ -528,6 +599,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     };
     gold.value -= def.cost;
     towers.value = [...towers.value, newTower];
+    counts.towersBuilt += 1;
     selectedCoord.value = { x: coord.x, y: coord.y };
     placingTowerType.value = null;
     soundEngine.playPlaceTower();
@@ -557,6 +629,8 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
         ? { ...t, level: (t.level + 1) as TowerLevel, investedGold: t.investedGold + cost }
         : t
     );
+    counts.upgrades += 1;
+    if (target.level + 1 === ELITE_LEVEL) counts.elitesBuilt += 1;
     soundEngine.playUpgrade();
   }
 
@@ -566,6 +640,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     gold.value += Math.round(target.investedGold * 0.75);
     towers.value = towers.value.filter((t) => t.id !== towerId);
     if (relocatingTowerId.value === towerId) relocatingTowerId.value = null;
+    counts.sells += 1;
     soundEngine.playSell();
   }
 
@@ -654,6 +729,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
         });
         relocatingTowerId.value = null;
         selectedCoord.value = coord;
+        counts.relocates += 1;
         soundEngine.playRelocate();
         return;
       }
@@ -705,6 +781,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
   }
 
   function continueEndless() {
+    track('endless-continue', { wave: wave.value, difficulty });
     sim.matchEnded = false;
     outcomeSummary.value = null;
     endlessMode.value = true;
@@ -715,6 +792,8 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
   }
 
   function playAgain() {
+    track('play-again', { wave: wave.value, difficulty });
+    resetAnalytics();
     const freshGrid = createInitialGrid(mapLayout);
     resetSimState(sim, computeMazePath(freshGrid, mapLayout).length);
     grid.value = freshGrid;
@@ -771,11 +850,14 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     lastTime = performance.now();
     rafId = requestAnimationFrame(tick);
     window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('pagehide', trackQuit);
   });
 
   onBeforeUnmount(() => {
+    trackQuit();
     cancelAnimationFrame(rafId);
     window.removeEventListener('keydown', onKeyDown);
+    window.removeEventListener('pagehide', trackQuit);
   });
 
   return {
