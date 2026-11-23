@@ -33,7 +33,7 @@ const status = computed(() => {
         break;
       case 'BUILD_MANAGE':
         title = 'Build & Move Towers';
-        detail = 'Ready for next wave';
+        detail = 'Build on your bricks, then send the wave';
         accent = 'text-emerald-300';
         break;
       case 'COMBAT':

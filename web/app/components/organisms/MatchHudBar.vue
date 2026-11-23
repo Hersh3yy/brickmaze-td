@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, Play, Skull } from '@lucide/vue';
+import { ArrowLeft, Coins, Heart, Keyboard, Play, Skull } from '@lucide/vue';
 import { DIFFICULTY_DEFS, MAX_WAVES, getWaveModifier } from '~/game/domain/constants';
 import type { DifficultyId, GamePhase } from '~/game/domain/types';
 
@@ -20,7 +20,25 @@ const emit = defineEmits<{
   toggleMute: [];
   sendWave: [];
   exitToLobby: [];
+  openShortcuts: [];
 }>();
+
+// Leaving ends the run, so the back arrow asks once: the first tap arms it for 3 s.
+const exitArmed = ref(false);
+let exitTimer: ReturnType<typeof setTimeout> | undefined;
+function onBack() {
+  const runOver = props.phase === 'VICTORY' || props.phase === 'GAME_OVER';
+  if (exitArmed.value || runOver) {
+    clearTimeout(exitTimer);
+    emit('exitToLobby');
+    return;
+  }
+  exitArmed.value = true;
+  exitTimer = setTimeout(() => {
+    exitArmed.value = false;
+  }, 3000);
+}
+onBeforeUnmount(() => clearTimeout(exitTimer));
 
 const canSendWave = computed(() => props.phase === 'BUILD_MANAGE');
 const isBossWave = computed(() => props.wave % 5 === 0);
@@ -42,7 +60,9 @@ const sendTitle = computed(() =>
     ? isBossWave.value
       ? 'Launch Boss Wave (Space)'
       : 'Send next wave (Space)'
-    : 'Finish brick draft first'
+    : props.phase === 'COMBAT'
+      ? 'Wave in progress'
+      : 'Finish this turn\'s bricks first'
 );
 const sendLabel = computed(() =>
   props.phase === 'COMBAT'
@@ -59,29 +79,47 @@ const sendLabelShort = computed(() =>
 </script>
 
 <template>
+  <!-- One row on every width: phones get icon labels, wider screens word labels. -->
   <header
-    class="flex flex-wrap md:flex-nowrap items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-5 py-2 bg-[#1D2531] border-b border-[#2F3D51] shrink-0"
+    class="flex items-center justify-between gap-2 sm:gap-3 px-2 sm:px-5 py-1.5 sm:py-2 bg-[#1D2531] border-b border-[#2F3D51] shrink-0"
   >
     <div class="flex items-center gap-2 shrink-0">
       <button
         type="button"
-        title="Return to Lobby"
-        class="p-2 sm:p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
-        aria-label="Return to Lobby"
-        @click="emit('exitToLobby')"
+        :title="exitArmed ? 'Tap again to leave (this run ends)' : 'Return to Lobby'"
+        :aria-label="exitArmed ? 'Confirm: leave match' : 'Return to Lobby'"
+        :class="[
+          'inline-flex items-center gap-1.5 p-2 sm:p-1.5 rounded-md transition-colors cursor-pointer',
+          exitArmed ? 'bg-rose-600 text-white px-2.5' : 'text-slate-400 hover:text-white hover:bg-white/5',
+        ]"
+        @click="onBack"
       >
         <ArrowLeft class="w-4 h-4" />
+        <span v-if="exitArmed" class="text-xs font-semibold whitespace-nowrap">Leave?</span>
       </button>
       <span
-        class="hidden sm:inline font-display text-base font-bold tracking-tight text-slate-100 whitespace-nowrap shrink-0"
+        v-if="!exitArmed"
+        class="hidden lg:inline font-display text-base font-bold tracking-tight text-slate-100 whitespace-nowrap shrink-0"
       >
         BrickMaze TD
       </span>
     </div>
 
-    <div
-      class="order-3 md:order-2 w-full md:w-auto flex items-center justify-between md:justify-center gap-3 sm:gap-5 pt-1 md:pt-0 border-t border-[#283446] md:border-t-0"
-    >
+    <!-- Phone stats: icons, no labels -->
+    <div class="flex sm:hidden items-center gap-2.5 min-w-0 font-mono text-sm font-bold tabular-nums">
+      <span :class="isBossWave ? 'text-rose-400' : 'text-slate-100'" :title="waveSubtext">
+        W{{ endlessMode ? wave : `${wave}/${MAX_WAVES}` }}
+      </span>
+      <span :class="['inline-flex items-center gap-0.5', lives <= 5 ? 'text-rose-400' : 'text-emerald-400']">
+        <Heart class="w-3.5 h-3.5 fill-current" aria-label="Lives" />{{ lives }}
+      </span>
+      <span class="inline-flex items-center gap-0.5 text-amber-300">
+        <Coins class="w-3.5 h-3.5" aria-label="Gold" />{{ gold }}
+      </span>
+    </div>
+
+    <!-- Wider screens: labelled stats -->
+    <div class="hidden sm:flex items-center justify-center gap-3 md:gap-5">
       <TabularMetricValue
         label="Wave"
         :value="endlessMode ? `${wave}` : `${wave}/${MAX_WAVES}`"
@@ -100,13 +138,22 @@ const sendLabelShort = computed(() =>
       <TabularMetricValue label="Path" :value="`${pathLength}`" subtext="t" accent-class="text-sky-300" />
     </div>
 
-    <div class="order-2 md:order-3 flex items-center gap-2 sm:gap-3 shrink-0">
+    <div class="flex items-center gap-1.5 sm:gap-3 shrink-0">
       <SpeedAudioControlGroup
         :speed="speed"
         :muted="muted"
         @change-speed="emit('changeSpeed', $event)"
         @toggle-mute="emit('toggleMute')"
       />
+      <button
+        type="button"
+        title="Keyboard shortcuts (?)"
+        aria-label="Keyboard shortcuts"
+        class="hidden pointer-fine:inline-flex p-2 rounded-md bg-[#1D2531] border border-[#2F3D51] text-slate-300 hover:text-white hover:bg-[#273244] transition-colors cursor-pointer"
+        @click="emit('openShortcuts')"
+      >
+        <Keyboard class="w-4 h-4" />
+      </button>
       <TactileButton
         :variant="isBossWave ? 'danger' : 'primary'"
         size="sm"
@@ -118,6 +165,10 @@ const sendLabelShort = computed(() =>
         <Play v-else class="w-3.5 h-3.5 fill-current" />
         <span class="hidden sm:inline">{{ sendLabel }}</span>
         <span class="sm:hidden">{{ sendLabelShort }}</span>
+        <kbd
+          v-if="canSendWave"
+          class="hidden pointer-fine:inline font-mono text-[10px] font-normal opacity-70 border border-white/25 rounded px-1"
+        >Space</kbd>
       </TactileButton>
     </div>
   </header>

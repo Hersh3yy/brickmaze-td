@@ -1,28 +1,24 @@
 <script setup lang="ts">
-import { ArrowUpCircle, Eraser, Lock, Move, Skull, Trash2, X } from '@lucide/vue';
+import { Skull, X } from '@lucide/vue';
 import {
   BRICK_COLOR_LIST,
-  CLEAR_GRAY_BRICK_COST,
   DIFFICULTY_DEFS,
   ELITE_AMPLIFY,
   ELITE_LEVEL,
   MAX_ELITE_TOWERS,
-  MAX_TOWER_LEVEL,
   SYNERGY_CATALOG,
   TOWER_DEFS,
   TOWER_LEVEL_SCALES,
   getWaveDefinition,
 } from '~/game/domain/constants';
-import { tileAppliesDebuff, towerModifiers } from '~/game/domain/simulation';
-import { computeTileModifiers } from '~/game/domain/synergy';
+import { towerModifiers } from '~/game/domain/simulation';
+import { computeTileModifiers, fusedBrickName } from '~/game/domain/synergy';
 import { waveTitle } from '~/game/worlds';
 import type {
   BrickColor,
-  Coord,
   DifficultyId,
   GamePhase,
   GridCell,
-  TargetingMode,
   Tower,
 } from '~/game/domain/types';
 
@@ -30,22 +26,15 @@ const props = defineProps<{
   grid: GridCell[][];
   wave: number;
   difficulty: DifficultyId;
-  gold: number;
   phase: GamePhase;
   selectedCell: GridCell | null;
   selectedTower: Tower | null;
   /** Towers currently at Elite, for the "x of 2" cap. */
   eliteCount: number;
-  relocatingTowerId: string | null;
 }>();
 
+// Details only: every action lives in the on-board TileActionMenu.
 const emit = defineEmits<{
-  upgradeTower: [towerId: string];
-  startRelocate: [towerId: string];
-  cancelRelocate: [];
-  sellTower: [towerId: string];
-  changeTargeting: [towerId: string, mode: TargetingMode];
-  clearGrayBrick: [coord: Coord];
   closeMobile: [];
 }>();
 
@@ -90,13 +79,9 @@ const towerView = computed(() => {
     finalDmg: Math.round(def.baseDamage * dmgScale * mods.damageMult),
     finalRate: (def.baseFireRate * rateScale * mods.fireRateMult).toFixed(1),
     finalRange: (def.baseRange * rangeScale * mods.rangeMult).toFixed(1),
-    upgradeCost: tower.level < MAX_TOWER_LEVEL ? def.upgradeCosts[tower.level - 1] ?? null : null,
     isElite,
     nextIsElite,
     eliteBlocked: nextIsElite && props.eliteCount >= MAX_ELITE_TOWERS,
-    sellValue: Math.round(tower.investedGold * 0.75),
-    isRelocatingThis: props.relocatingTowerId === tower.id,
-    showFresh: tileAppliesDebuff(props.grid, tower.x, tower.y),
   };
 });
 
@@ -114,7 +99,9 @@ const cellView = computed(() => {
   const mods = computeTileModifiers(props.grid, cell.x, cell.y);
 
   let title = world.value.text.wall;
-  if (cell.kind === 'MASTER_BRICK') title = `Master: ${mods.ammoLabel}`;
+  if (cell.kind === 'MASTER_BRICK' && cell.color) {
+    title = fusedBrickName(cell.color, cell.secondaryColor ?? cell.color);
+  }
   else if (cell.kind === 'ACTIVE_BRICK' && cell.color) {
     title = `${el(cell.color)} Brick`;
   }
@@ -138,11 +125,6 @@ const cellView = computed(() => {
     mods,
     title,
     effectText,
-    canDeleteGray:
-      isGray &&
-      props.gold >= CLEAR_GRAY_BRICK_COST &&
-      props.phase !== 'VICTORY' &&
-      props.phase !== 'GAME_OVER',
   };
 });
 
@@ -193,7 +175,7 @@ const isPreBoss = computed(() => props.wave % 5 === 4);
         <span v-if="towerView.mods.isDoubleElement" class="font-mono font-bold text-amber-300">×2 FUSED</span>
       </div>
       <p v-if="towerView.mods.primaryElement === 'kinetic'" class="text-xs text-slate-400">
-        Gray Brick (Kinetic). Move onto a Yellow, Red, or Green brick between waves to infuse elemental ammo.
+        Plain ammo. Move it onto a colour brick between waves to give it an element.
       </p>
       <div v-else class="space-y-1.5">
         <div class="flex flex-wrap gap-2">
@@ -231,26 +213,7 @@ const isPreBoss = computed(() => props.wave % 5 === 4);
       </div>
     </div>
 
-    <div v-if="towerView.tower.type !== 'pulse'" class="space-y-1.5 pt-2 border-t border-[#2D3A4D]">
-      <div class="text-xs text-slate-400">Target</div>
-      <TargetPrioritySwitch
-        :value="towerView.tower.targeting"
-        :show-fresh="towerView.showFresh"
-        @change="emit('changeTargeting', towerView.tower.id, $event)"
-      />
-    </div>
-
-    <div class="space-y-2 pt-2 border-t border-[#2D3A4D]">
-      <TactileButton
-        v-if="towerView.upgradeCost !== null"
-        variant="amber"
-        full-width
-        :disabled="gold < towerView.upgradeCost || towerView.eliteBlocked"
-        @click="emit('upgradeTower', towerView.tower.id)"
-      >
-        <ArrowUpCircle class="w-4 h-4" />
-        <span>{{ towerView.nextIsElite ? 'Make Elite' : 'Upgrade' }} · {{ towerView.upgradeCost }}g</span>
-      </TactileButton>
+    <div v-if="towerView.nextIsElite || towerView.isElite" class="pt-2 border-t border-[#2D3A4D]">
       <p v-if="towerView.nextIsElite" class="text-[11px] leading-snug text-slate-400">
         <span class="text-fuchsia-300 font-semibold">Elite</span> amplifies what this tower already does:
         element bonuses ×{{ ELITE_AMPLIFY.elementPower }}, +{{ ELITE_AMPLIFY.extraChains }} chain jumps if it chains,
@@ -259,36 +222,10 @@ const isPreBoss = computed(() => props.wave % 5 === 4);
           {{ eliteCount }}/{{ MAX_ELITE_TOWERS }} Elites used.
         </span>
       </p>
-      <div v-if="towerView.isElite" class="text-xs text-center font-mono text-fuchsia-300 py-1">
-        Elite · max tier
-      </div>
-
-      <TactileButton v-if="towerView.isRelocatingThis" variant="secondary" full-width @click="emit('cancelRelocate')">
-        Cancel Move
-      </TactileButton>
-      <TactileButton
-        v-else
-        variant="secondary"
-        full-width
-        :disabled="isCombat"
-        @click="emit('startRelocate', towerView.tower.id)"
-      >
-        <Lock v-if="isCombat" class="w-3.5 h-3.5" />
-        <Move v-else class="w-3.5 h-3.5" />
-        <span>{{ isCombat ? 'Move Locked' : 'Move Tower (Free)' }}</span>
-      </TactileButton>
-
-      <TactileButton
-        variant="ghost"
-        size="sm"
-        full-width
-        class="text-rose-300 hover:text-rose-200 hover:bg-rose-500/10"
-        @click="emit('sellTower', towerView.tower.id)"
-      >
-        <Trash2 class="w-3.5 h-3.5" />
-        <span>Sell (+{{ towerView.sellValue }}g)</span>
-      </TactileButton>
+      <div v-else class="text-xs font-mono text-fuchsia-300">Elite · max tier</div>
     </div>
+
+    <p class="text-[11px] text-slate-500">Upgrade, move, sell and targeting are in the menu on the board.</p>
 
     <div v-if="towerView.mods.activeSynergies.length > 0" class="pt-2 border-t border-[#2D3A4D]">
       <div class="text-xs text-amber-300 font-medium mb-1">Active Combos</div>
@@ -308,7 +245,7 @@ const isPreBoss = computed(() => props.wave % 5 === 4);
       <p class="text-xs text-slate-400 mt-1">
         {{
           cellView.isGray
-            ? 'Neutral Kinetic mount. Replant a colored brick free next turn, or delete anytime (even mid-wave) to open space.'
+            ? 'Plain mount, no element. Replant a colour brick on it for free next turn, or remove it from the board menu (even mid-wave) to open space.'
             : 'Any weapon mounted here fires this brick’s elemental ammo.'
         }}
       </p>
@@ -338,20 +275,6 @@ const isPreBoss = computed(() => props.wave % 5 === 4);
       <SynergyLinkRow v-for="syn in cellView.mods.activeSynergies" :key="syn.id" :synergy="syn" active />
     </div>
 
-    <div v-if="cellView.isGray" class="pt-2 border-t border-[#2D3A4D] space-y-2">
-      <TactileButton
-        variant="danger"
-        full-width
-        :disabled="!cellView.canDeleteGray"
-        @click="emit('clearGrayBrick', { x: cellView.cell.x, y: cellView.cell.y })"
-      >
-        <Eraser class="w-3.5 h-3.5" />
-        <span>Delete Gray Wall ({{ CLEAR_GRAY_BRICK_COST }}g)</span>
-      </TactileButton>
-      <p v-if="isCombat" class="text-[11px] text-slate-400">
-        Mid-wave delete opens the tile immediately for upcoming creeps.
-      </p>
-    </div>
   </aside>
 
   <!-- Default: next wave + rules reference -->
@@ -365,7 +288,7 @@ const isPreBoss = computed(() => props.wave % 5 === 4);
           ]"
         >
           <Skull v-if="isBossWave" class="w-3.5 h-3.5 text-rose-400 shrink-0" />
-          <span>{{ isBossWave ? `BOSS WAVE · ${diffLabel}` : `Next Wave · ${diffLabel}` }}</span>
+          <span>{{ isBossWave ? `BOSS WAVE · ${diffLabel}` : `${isCombat ? 'This Wave' : 'Next Wave'} · ${diffLabel}` }}</span>
         </div>
         <button type="button" aria-label="Close panel" :class="CLOSE_BTN_CLASS" @click="emit('closeMobile')">
           <X class="w-4 h-4" />

@@ -1,25 +1,37 @@
 <script setup lang="ts">
 import { Volume2, VolumeX } from '@lucide/vue';
 
-defineProps<{
-  speed: 1 | 2 | 3;
-  muted: boolean;
-}>();
-
 const emit = defineEmits<{
   changeSpeed: [s: 1 | 2 | 3];
   toggleMute: [];
 }>();
 
+const props = defineProps<{
+  speed: 1 | 2 | 3;
+  muted: boolean;
+}>();
+
 const speeds: (1 | 2 | 3)[] = [1, 2, 3];
+/** Phones get one button that cycles 1x > 2x > 3x, to keep the HUD on one row. */
+function cycleSpeed() {
+  emit('changeSpeed', props.speed === 3 ? 1 : ((props.speed + 1) as 2 | 3));
+}
 </script>
 
 <template>
-  <div class="flex items-center gap-2 shrink-0">
+  <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+    <button
+      type="button"
+      :aria-label="`Speed ${speed}x, tap to change`"
+      class="sm:hidden min-w-10 px-2 py-1.5 rounded-md bg-amber-500 text-slate-950 font-mono text-xs font-bold cursor-pointer"
+      @click="cycleSpeed"
+    >
+      {{ speed }}x
+    </button>
     <div
       role="group"
       aria-label="Simulation speed"
-      class="inline-flex items-center bg-[#151B23] border border-[#2F3D51] rounded-md p-0.5"
+      class="hidden sm:inline-flex items-center bg-[#151B23] border border-[#2F3D51] rounded-md p-0.5"
     >
       <button
         v-for="s in speeds"

@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { RefreshCw, Undo2 } from '@lucide/vue';
+import { Info, RefreshCw, Undo2 } from '@lucide/vue';
 import { TOWER_LIST } from '~/game/domain/constants';
-import type {
-  BrickColor,
-  GamePhase,
-  PlacedTurnEntry,
-  TowerType,
-} from '~/game/domain/types';
+import type { BrickColor, GamePhase, PlacedTurnEntry, TowerType } from '~/game/domain/types';
+
+// The bar under the board. It keeps one fixed height in every phase, so the board
+// above never resizes (and tiles never slide away from the cursor) between steps.
+// Phones skip the tower shop: the on-board menu builds there.
 
 const props = defineProps<{
   phase: GamePhase;
@@ -17,8 +16,8 @@ const props = defineProps<{
   pickIndex: number | null;
   gold: number;
   placingTowerType: TowerType | null;
-  creepsRemaining: number;
-  waveTotalCreeps: number;
+  /** One line about the next (or running) wave, for the phone bar. */
+  waveLine: string;
 }>();
 
 const emit = defineEmits<{
@@ -26,102 +25,85 @@ const emit = defineEmits<{
   undoLastBrick: [];
   selectDraftBrick: [index: number];
   selectTowerType: [type: TowerType];
+  openDetails: [];
 }>();
 
 const placedCount = computed(() => props.placedTurnCoords.length);
+const isDraft = computed(() => props.phase === 'BUILD_PLACE' || props.phase === 'BUILD_PICK');
 
-function slotState(idx: number): 'placed' | 'next' | 'queued' {
+function slotState(idx: number): 'placed' | 'next' | 'queued' | 'pickable' {
+  if (props.phase === 'BUILD_PICK') return 'pickable';
   return idx < placedCount.value ? 'placed' : idx === placedCount.value ? 'next' : 'queued';
 }
+
+const BAR =
+  'h-16 sm:h-[72px] px-2 sm:px-5 bg-[#1D2531] border-t border-[#2F3D51] flex items-center gap-2 sm:gap-4 shrink-0';
 </script>
 
 <template>
-  <footer
-    v-if="phase === 'BUILD_PLACE'"
-    class="px-3 sm:px-5 py-2 sm:py-2.5 bg-[#1D2531] border-t border-[#2F3D51] flex flex-wrap items-center justify-between gap-2.5 sm:gap-4 shrink-0"
-  >
-    <div class="flex items-center gap-2 sm:gap-2.5 overflow-x-auto max-w-full pb-0.5">
+  <!-- Draft: place 4, then pick one -->
+  <footer v-if="isDraft" :class="BAR">
+    <div class="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
       <DraftBrickSlot
         v-for="(color, idx) in draftQueue"
         :key="`${idx}-${color}`"
         :index="idx"
         :color="color"
         :state="slotState(idx)"
-      />
-    </div>
-
-    <div class="flex items-center gap-2 shrink-0 ml-auto">
-      <TactileButton
-        variant="secondary"
-        size="sm"
-        :disabled="placedCount === 0"
-        @click="emit('undoLastBrick')"
-      >
-        <Undo2 class="w-3.5 h-3.5" />
-        <span>Undo</span>
-      </TactileButton>
-      <TactileButton
-        variant="amber"
-        size="sm"
-        :disabled="rerollsRemaining <= 0 || placedCount > 0"
-        @click="emit('rerollDraft')"
-      >
-        <RefreshCw class="w-3.5 h-3.5" />
-        <span>Reroll ({{ rerollsRemaining }})</span>
-      </TactileButton>
-    </div>
-  </footer>
-
-  <footer
-    v-else-if="phase === 'BUILD_PICK'"
-    class="px-3 sm:px-5 py-2 sm:py-2.5 bg-[#1D2531] border-t border-[#2F3D51] flex flex-wrap items-center justify-between gap-2.5 sm:gap-4 shrink-0"
-  >
-    <div class="flex items-center gap-2 sm:gap-2.5 overflow-x-auto max-w-full pb-0.5">
-      <DraftBrickSlot
-        v-for="(color, idx) in draftQueue"
-        :key="`${idx}-${color}`"
-        :index="idx"
-        :color="color"
-        state="pickable"
-        :selected="pickIndex === idx"
+        :selected="phase === 'BUILD_PICK' && pickIndex === idx"
         @pick="emit('selectDraftBrick', idx)"
       />
     </div>
 
-    <div class="flex items-center gap-2 flex-wrap ml-auto">
-      <TactileButton variant="ghost" size="sm" @click="emit('undoLastBrick')">
-        <Undo2 class="w-3.5 h-3.5" />
-        <span>Undo</span>
-      </TactileButton>
+    <p v-if="phase === 'BUILD_PICK'" class="hidden md:block min-w-0 text-xs text-slate-400 leading-snug">
+      Keep one brick. The other three turn into gray walls.
+    </p>
 
-      <span class="text-xs text-slate-400">
-        {{
-          pickIndex === null
-            ? 'Click one of your 4 bricks to keep it or fuse into it'
-            : 'Choose Keep or a fusion in the menu on the board'
-        }}
-      </span>
+    <div class="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-auto">
+      <TactileButton
+        variant="secondary"
+        size="sm"
+        :disabled="placedCount === 0"
+        title="Undo the last brick (Z)"
+        aria-label="Undo the last brick"
+        @click="emit('undoLastBrick')"
+      >
+        <Undo2 class="w-3.5 h-3.5" />
+        <span class="hidden sm:inline">Undo</span>
+      </TactileButton>
+      <TactileButton
+        v-if="phase === 'BUILD_PLACE'"
+        variant="amber"
+        size="sm"
+        :disabled="rerollsRemaining <= 0 || placedCount > 0"
+        :title="placedCount > 0 ? 'Reroll only before placing' : 'New set of 4 bricks (R)'"
+        :aria-label="`Reroll bricks, ${rerollsRemaining} left`"
+        @click="emit('rerollDraft')"
+      >
+        <RefreshCw class="w-3.5 h-3.5" />
+        <span><span class="hidden sm:inline">Reroll </span>{{ rerollsRemaining }}</span>
+      </TactileButton>
     </div>
   </footer>
 
-  <footer
-    v-else
-    class="px-3 sm:px-5 py-2 sm:py-2.5 bg-[#1D2531] border-t border-[#2F3D51] space-y-2 shrink-0"
-  >
-    <div v-if="phase === 'COMBAT'" class="flex items-center gap-3 sm:gap-4">
-      <span class="text-xs font-mono text-slate-300 tabular-nums whitespace-nowrap shrink-0">
-        Creeps: {{ creepsRemaining }}/{{ waveTotalCreeps }}
+  <!-- Building and combat -->
+  <footer v-else :class="BAR">
+    <!-- Phones: what is coming, plus the way to the details sheet -->
+    <button
+      type="button"
+      class="sm:hidden flex items-center gap-2 min-w-0 w-full text-left cursor-pointer"
+      @click="emit('openDetails')"
+    >
+      <Info class="w-4 h-4 text-slate-400 shrink-0" />
+      <span class="min-w-0">
+        <span class="block text-xs font-semibold text-slate-100 truncate">{{ waveLine }}</span>
+        <span class="block text-[11px] text-slate-400 truncate">
+          {{ phase === 'COMBAT' ? 'Tap a gray wall to remove it (10g)' : 'Tap a brick to build · tap a tower to upgrade' }}
+        </span>
       </span>
-      <ProgressTrackBar
-        :value="waveTotalCreeps - creepsRemaining"
-        :max="Math.max(1, waveTotalCreeps)"
-        fill-class="bg-emerald-500"
-        height-class="h-1.5"
-        ariaLabel="Wave defeat progress"
-      />
-    </div>
+    </button>
 
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5">
+    <div class="hidden sm:grid grid-cols-4 gap-2 sm:gap-2.5 w-full">
       <TurretShopCard
         v-for="tType in TOWER_LIST"
         :key="tType"
