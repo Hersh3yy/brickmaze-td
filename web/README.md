@@ -53,13 +53,15 @@ visit sessions, so one session's timeline reads as the story of a run. Data is f
 | Event | Fires in | Data |
 | --- | --- | --- |
 | `match-start` | `startMatch()` in `pages/index.vue` | difficulty, map, world, theme |
-| `wave-end` | `simEvents.waveCleared` in `useArenaMatch.ts`, every wave incl. the last | wave, difficulty, livesLeft, livesLost, gold, pathLength, towers, elites, synergies, seconds, speed, endless |
-| `match-end` | `finishMatch()` in `useArenaMatch.ts` (win or loss) | won, difficulty, map, wavesCleared, kills, synergies, longestPath, minutes, towersBuilt, upgrades, elitesBuilt, sells, rerolls, fusions, relocates |
-| `match-quit` | leaving `/play` (unmount or `pagehide`) before the match ended, once | wave, phase, minutes |
+| `wave-end` | `simEvents.waveCleared` in `useArenaMatch.ts`, every wave incl. the last | wave, difficulty, livesLeft, livesLost, gold, pathLength, towers, elites, synergies, seconds, gameSeconds, speed, endless |
+| `match-end` | `finishMatch()` in `useArenaMatch.ts` (win or loss) | won, difficulty, map, wavesCleared, kills, synergies, longestPath, minutes, speed, towersBuilt, upgrades, elitesBuilt, sells, rerolls, fusions, relocates |
+| `match-quit` | leaving `/play` (unmount or `pagehide`) before the match ended, once | wave, phase, minutes, speed |
 | `endless-continue` | `continueEndless()` | wave, difficulty |
 | `play-again` | `playAgain()` | wave, difficulty |
 | `profile-transfer` | `TransferCodeField.vue`, after a successful copy or import | action (`export` or `import`) |
 
 The action totals in `match-end` are plain counters in `useArenaMatch.ts`, not refs, for
 the same frame-rate reason as the rest of the match state. `seconds` and `minutes` are
-real time, so a wave at 3x speed is shorter.
+real time. `gameSeconds` is the wave's combat time at 1x (real time times the speed
+multiplier), so `gameSeconds / seconds` is the average multiplier during the wave. `speed`
+is the multiplier (1, 2 or 3) at the moment the event fires.

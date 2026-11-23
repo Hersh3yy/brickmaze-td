@@ -294,6 +294,8 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
   // match-quit. Player actions are counted here and sent once, with match-end.
   let matchStartedAt = performance.now();
   let waveStartedAt = 0;
+  /** Combat time of the current wave in game seconds (real time x speed multiplier). */
+  let waveGameSeconds = 0;
   let livesAtWaveStart = 0;
   let quitSent = false;
   const counts = {
@@ -325,6 +327,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
       wave: wave.value,
       phase: phase.value,
       minutes: minutesSince(matchStartedAt),
+      speed: speed.value,
     });
   }
 
@@ -340,6 +343,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
       synergies: synergyLinks.value.length,
       longestPath: sim.longestPathSeen,
       minutes: minutesSince(matchStartedAt),
+      speed: speed.value,
       ...counts,
     });
     phase.value = won ? 'VICTORY' : 'GAME_OVER';
@@ -375,7 +379,10 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
         towers: towers.value.length,
         elites: eliteTowerCount.value,
         synergies: synergyLinks.value.length,
+        // seconds = wall clock; gameSeconds = what the wave took at 1x. Their ratio is the
+        // average multiplier, `speed` is the multiplier at the end of the wave.
         seconds: Math.round((performance.now() - waveStartedAt) / 1000),
+        gameSeconds: Math.round(waveGameSeconds),
         speed: speed.value,
         endless: endlessMode.value,
       });
@@ -425,6 +432,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     world.speed = speed.value;
 
     const inCombat = world.phase === 'COMBAT';
+    if (inCombat) waveGameSeconds += rawDt * world.speed;
     stepSimulation(sim, world, rawDt, now, simEvents);
 
     if (world.gold !== gold.value) gold.value = world.gold;
@@ -555,6 +563,7 @@ export function useArenaMatch(opts: ArenaMatchOptions) {
     if (phase.value !== 'BUILD_MANAGE') return;
     const count = beginWave(sim, wave.value, difficulty);
     waveStartedAt = performance.now();
+    waveGameSeconds = 0;
     livesAtWaveStart = lives.value;
     waveTotalCreepsUi.value = count;
     creepsRemainingUi.value = count;
