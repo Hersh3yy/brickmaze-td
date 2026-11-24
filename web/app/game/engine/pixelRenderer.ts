@@ -278,6 +278,7 @@ function paintBoard(
             style: brickStyle,
             isActiveGlow: true,
             emblem: spriteAtlas.getEmblem(color),
+            glints: color === 'purple',
           });
           break;
         }
@@ -288,6 +289,7 @@ function paintBoard(
             style: brickStyle,
             isActiveGlow: true,
             emblem: hasTower ? undefined : spriteAtlas.getEmblem(color),
+            glints: color === 'purple',
           });
           break;
         }
@@ -304,6 +306,7 @@ function paintBoard(
             isDouble,
             glyph: hasTower ? undefined : isDouble ? '×2' : '★',
             badgeCorner: hasTower && isDouble ? '×2' : undefined,
+            glints: cell.color === 'purple' || cell.secondaryColor === 'purple',
           });
           break;
         }
@@ -376,6 +379,11 @@ function drawBrickTile(
     style?: 'studded' | 'block';
     /** Wood grain lines on a plain block (gray walls in block style). */
     grain?: boolean;
+    /**
+     * Two sparkles in opposite corners (Arcane bricks), so the colour is told apart by
+     * shape as well as hue, even with a tower standing on it.
+     */
+    glints?: boolean;
     alpha?: number;
   }
 ) {
@@ -454,6 +462,20 @@ function drawBrickTile(
   if (opts?.emblem) {
     const em = opts.emblem;
     ctx.drawImage(em, px + Math.round((s - em.width) / 2) + 1, py + Math.round((s - em.height) / 2));
+  }
+
+  if (opts?.glints) {
+    for (const [gx, gy] of [
+      [x + w - 6, y + 5],
+      [x + 5, y + h - 9],
+    ] as const) {
+      ctx.fillStyle = darkHex;
+      ctx.fillRect(gx - 3, gy - 1, 7, 3);
+      ctx.fillRect(gx - 1, gy - 3, 3, 7);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(gx - 2, gy, 5, 1);
+      ctx.fillRect(gx, gy - 2, 1, 5);
+    }
   }
 
   for (const st of opts?.emblem || isBlock ? [] : studOffsets) {
@@ -798,8 +820,8 @@ function drawCreep(ctx: CanvasRenderingContext2D, creep: Creep) {
   const drawH = voxel ? Math.round(voxel.height + 3) : Math.round((sprite.height / sprite.width) * drawW);
   const x = Math.round(creep.x);
   const y = Math.round(creep.y);
-  // Fliers are drawn raised above their shadow with a slow bob, so they read as airborne.
-  // (Placeholder look until the Worlds have real flier art.)
+  // Fliers are drawn raised above a small, faint shadow with a slow bob, so they read as
+  // airborne over the maze.
   const lift = creep.trait === 'flier' ? 12 + Math.round(Math.sin(creep.animTime * 3) * 2) : 0;
 
   const isSlowed = creep.slowTimer > 0;
@@ -821,6 +843,13 @@ function drawCreep(ctx: CanvasRenderingContext2D, creep: Creep) {
     ctx.lineWidth = isHeavySlow ? 2 : 1.5;
     ctx.stroke();
     ctx.restore();
+  } else if (lift) {
+    // A flier's shadow is smaller and fainter the higher it bobs.
+    const k = 1 - (lift - 10) * 0.05;
+    ctx.fillStyle = `rgba(0,0,0,${(0.3 * k).toFixed(2)})`;
+    ctx.beginPath();
+    ctx.ellipse(x, y + 5, Math.round(drawW * 0.32 * k), Math.max(2, Math.round(drawW * 0.12 * k)), 0, 0, Math.PI * 2);
+    ctx.fill();
   } else if (voxel) {
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.beginPath();
@@ -845,6 +874,18 @@ function drawCreep(ctx: CanvasRenderingContext2D, creep: Creep) {
     ctx.restore();
   } else {
     ctx.drawImage(sprite, spriteLeft, spriteTop, drawW, drawH);
+  }
+
+  // Pinned by a Harpoon: a dart stuck in its back, tail feather up.
+  if ((creep.pinTimer ?? 0) > 0) {
+    const px = x + Math.floor(drawW * 0.15);
+    const py = spriteTop + Math.floor(drawH * 0.3);
+    ctx.fillStyle = '#0F172A';
+    ctx.fillRect(px - 1, py - 7, 4, 9);
+    ctx.fillStyle = '#E2E8F0';
+    ctx.fillRect(px, py - 6, 2, 7);
+    ctx.fillStyle = '#F43F5E';
+    ctx.fillRect(px - 1, py - 9, 4, 3);
   }
 
   // One cue per status: slow = the ground ring above, poison = rising bubbles,
@@ -940,6 +981,19 @@ function drawStylizedProjectile(ctx: CanvasRenderingContext2D, proj: Projectile)
 
   const drawX = Math.round(proj.x);
   const drawY = Math.round(proj.y - arcZ);
+
+  // A Harpoon bolt trails its string back to the launcher.
+  if (proj.towerType === 'harpoon') {
+    ctx.save();
+    ctx.globalAlpha = 0.7;
+    ctx.strokeStyle = '#E7DCC6';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(Math.round(proj.startX) + 0.5, Math.round(proj.startY) + 0.5);
+    ctx.lineTo(drawX + 0.5, drawY + 0.5);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   // Ground shadow for arcing Cannon shells
   if (proj.arcHeight > 0) {
@@ -1171,6 +1225,7 @@ export function renderArenaFrame(ctx: CanvasRenderingContext2D, frame: RenderFra
           style: world.brickStyle,
           alpha: 0.78,
           emblem: spriteAtlas.getEmblem(frame.nextDraftColor),
+          glints: frame.nextDraftColor === 'purple',
         });
         if (isUnoccupiedGray) {
           ctx.save();

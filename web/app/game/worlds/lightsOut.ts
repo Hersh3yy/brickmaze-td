@@ -67,6 +67,7 @@ const sprites: WorldSprites = {
     R: '#D9B48A',
     P: '#F1E7D3',
     N: '#EEF1F5',
+    F: '#D64545',
   },
   // Elite in the flat fallback: gold-painted trim and brass (the 3D models add more)
   elite: { palette: { H: '#A57D18', K: '#E5B83A', k: '#FFE793' }, trim: '#FFE793' },
@@ -149,24 +150,24 @@ const sprites: WorldSprites = {
       'oggggggggggggo..',
       '.oHHHHHHHHHHo...',
     ],
-    // PLACEHOLDER art (copy of sniper) until the real harpoon art lands
+    // Dart Ranger: hip-firing a dart blaster tilted up at the planes, red suction cup.
     harpoon: [
-      '................',
-      '................',
-      '................',
-      '................',
-      '................',
-      '................',
-      '..oooo..........',
-      '.ogGGGo....okko.',
-      'ooHHHHoooooooooo',
-      'oGgGGGHHHHNNNNNm',
-      'oGGGGGGGGGoooooo',
-      'oHHHooHHHHo.....',
-      '.ooo..oooo......',
-      '.oooooooooooo...',
-      'oggggggggggggo..',
-      '.oHHHHHHHHHHo...',
+      '.....oooo.......',
+      '....oggGGo......',
+      '...ogGGGGGo.....',
+      '..oooHHHHooo....',
+      '....oGgGGo...oo.',
+      '....oGgGHo.ooPFo',
+      '...ooGGGGooCCoo.',
+      '...oGgGGGoCCo...',
+      '...oGgGGGCCo....',
+      '...oGGGGCCo.....',
+      '...oGGGGGo......',
+      '...oGGoGGo......',
+      '...oHHooHHo.....',
+      '..oooooooooo....',
+      '.oggggggggggo...',
+      '..oHHHHHHHHo....',
     ],
   },
   creeps: {
@@ -238,23 +239,33 @@ const sprites: WorldSprites = {
       ['...oDo...oDo..', '..oo......oo..'],
       ['.....oDooDo...', '.....oo..oo...']
     ),
-    // PLACEHOLDER art (copy of swift) until the real flier art lands
-    flier: walk(
+    // Paper Pilot: a mouse in brass goggles riding a folded paper plane.
+    flier: [
       [
         '..............',
-        '..............',
-        '..............',
-        '.......ooo....',
-        '......oPPPo...',
-        '.LL..oooooooo.',
-        '....oBLLBBBEBo',
-        'PPPoBBBBBBBBBP',
-        '.LL.oDDDDDDoo.',
-        '....oDDDDDo...',
+        '........oo....',
+        '.......oPPo...',
+        '......oBBBBoo.',
+        '......oBKBEBBo',
+        '...P..oBBBBo..',
+        'oooooooooooooo',
+        'oWWWWWWWWWWWoo',
+        '.owwwwwwwwoo..',
+        '..ooooooo.....',
       ],
-      ['...oDo...oDo..', '..oo......oo..'],
-      ['.....oDooDo...', '.....oo..oo...']
-    ),
+      [
+        '..............',
+        '........oo....',
+        '.......oPPo...',
+        '......oBBBBoo.',
+        '......oBKBEBBo',
+        '..P...oBBBBo..',
+        '.ooooooooooooo',
+        '.oWWWWWWWWWWWo',
+        '..owwwwwwwoo..',
+        '...oooooo.....',
+      ],
+    ],
     // Sugarlump: a fat mouse with a white sugar cube strapped to its back.
     regen: walk(
       [
@@ -302,7 +313,7 @@ const sprites: WorldSprites = {
       y: '#8C6F1E',
     }),
     swift: mouse('#A07A55', '#C9A57F', '#6A4E34', { L: '#EBDCC8' }),
-    flier: mouse('#A07A55', '#C9A57F', '#6A4E34', { L: '#EBDCC8' }),
+    flier: mouse('#B8915E', '#DDBE93', '#86653D', { W: '#FBFAF6', w: '#D9D3C7', K: '#D9B23F' }),
     regen: mouse('#9C7B62', '#C4A58C', '#664D3B', { W: '#FBFAF6', w: '#D9D3C7' }),
     boss: mouse('#6F6B70', '#9C97A0', '#45424A', { Y: '#D9B23F' }),
   },
@@ -389,15 +400,15 @@ const sprites: WorldSprites = {
       '........',
       '........',
     ],
-    // PLACEHOLDER art (copy of yellow bolt) until the real Arcane projectile lands
+    // a pinch of glitter: a four-point sparkle with loose specks
     purple: [
-      '....oo..',
-      '..ooWLo.',
-      '.oLLWLo.',
-      'oLWWWLoo',
-      '.ooWLLo.',
-      '..oLoo..',
-      '........',
+      '...o....',
+      '..oWo...',
+      '.ooLoo.l',
+      'oLWWWLo.',
+      '.ooLoo..',
+      '..oWo.l.',
+      '...o....',
       '........',
     ],
     // slime glob with a drip
@@ -417,7 +428,7 @@ const sprites: WorldSprites = {
     red: { o: '#7A2214', F: '#E8553E', W: '#FDE68A' },
     yellow: { o: '#7A4E0E', L: '#F5B82E', W: '#FFFFFF' },
     green: { o: '#0E4A42', G: '#2BB5A0', L: '#9EEBDD', W: '#F0FDFA' },
-    purple: { o: '#3E1E66', L: '#B07CE8', W: '#FFFFFF' },
+    purple: { o: '#3E1E66', L: '#B07CE8', l: '#E5D4FA', W: '#FFFFFF' },
   },
   emblems: {
     // match flame
@@ -453,15 +464,15 @@ const sprites: WorldSprites = {
       '..x....',
       '.......',
     ],
-    // Gem (Arcane / Glitter)
+    // glitter sparkle with a speck
     purple: [
+      '...x..x',
       '...x...',
       '..xxx..',
-      '.xx.xx.',
-      'xx...xx',
-      '.xx.xx.',
+      'xxxxxxx',
       '..xxx..',
       '...x...',
+      'x..x...',
       '.......',
     ],
   },

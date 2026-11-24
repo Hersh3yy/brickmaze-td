@@ -37,6 +37,10 @@ const MATERIALS: MaterialMap = {
   Z: ['#F2DDBC', '#E0C49A', '#B8966A', '#8A6E4A'],
   V: ['#B79BE0', '#8C6BC0', '#634494', '#45306A'],
   F: ['#F28080', '#D64545', '#9C2C2C', '#6B1D1D'],
+  // paper plane: folded sheet, its crease, and the blue ruled lines of school paper
+  J: ['#FFFFFF', '#F1EEE6', '#CFC9BC', '#A39D91'],
+  j: ['#E8E3D8', '#D2CCBF', '#ABA597', '#827C70'],
+  L: ['#A9CBF2', '#7BA7DE', '#5A82B8', '#3F5E8A'],
   C: ['#FFFFFF', '#CCCCCC', '#999999', '#666666'],
 };
 
@@ -214,6 +218,40 @@ const proneSniper: VoxelBuild = {
   },
 };
 
+/** Height of the dart blaster's tube centre at x (it rises towards the muzzle). */
+const tubeZ = (x: number) => 9.4 + (x - 5) * 0.38;
+
+const dartRanger: VoxelBuild = {
+  size: [16, 16, 21],
+  muzzle: [7.2, 13.5],
+  sculpt(s) {
+    base(s);
+    const sh = standingBody(s, 6.6);
+    head(s, 6.8, 13);
+    // Dart blaster fired from the hip, tilted up at the planes: element-painted tube,
+    // dark muzzle ring, a dart with a red suction cup, the string coiled on the hip.
+    s.rod(5, 8, tubeZ(5), 13.4, 8, tubeZ(13.4), 1.25, 'C');
+    s.rod(12.6, 8, tubeZ(12.6), 13.6, 8, tubeZ(13.6), 1.5, 'H');
+    s.rod(13.6, 8, tubeZ(13.6), 15, 8, tubeZ(15), 0.35, 'P');
+    s.ell(15.3, 8, tubeZ(15.3), 0.5, 1, 1, 'F');
+    s.rod(6.6, 4.6, sh, 9.6, 7, tubeZ(9.6) - 0.9, 0.9, 'G');
+    s.rod(6.6, 11.4, sh, 7.6, 9.2, tubeZ(7.6) - 0.9, 0.9, 'G');
+    s.cyl(6.3, 11.6, 6.8, 7.6, 1.3, 'P');
+    s.cyl(6.3, 11.6, 6.8, 7.6, 0.6, 'H');
+  },
+  elite(s) {
+    plinth(s);
+    veteranHelmet(s, 6.8, 13);
+    medals(s, 6.6);
+    // Gold bands and a sight on the tube, a quiver of spare darts on the back
+    for (const x of [7.6, 11]) s.rod(x, 8, tubeZ(x), x + 0.6, 8, tubeZ(x + 0.6), 1.5, 'Y');
+    s.rod(9, 8, tubeZ(9) + 1.4, 10.6, 8, tubeZ(10.6) + 1.4, 0.45, 'Y');
+    s.cyl(3.6, 9.8, 7, 11.4, 0.9, 'W');
+    s.ell(3.6, 9.4, 12.8, 0.55, 0.55, 0.55, 'F');
+    s.ell(3.6, 10.3, 13, 0.55, 0.55, 0.55, 'F');
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Mice (facing +x, ground at z = 0)
 // ---------------------------------------------------------------------------
@@ -324,6 +362,40 @@ const mendwife = mouseBuild({ fur: 'U', light: 'm' }, 1, [22, 12, 10], (s) => {
   s.rod(1.6, 3.6, 1.6, 1.6, 8.4, 1.6, 1.4, 'Z');
 });
 
+/**
+ * Paper Pilot: a mouse in brass goggles on a folded paper plane. The wings are fanned
+ * from the nose to the trailing edge; their tips flex between frames.
+ */
+const paperPilot: VoxelBuild = {
+  size: [22, 14, 10],
+  scale: 1,
+  sculpt(s, frame) {
+    const flex = frame === 0 ? 0.7 : -0.1;
+    const nose: [number, number, number] = [20.6, 7, 2.6];
+    for (let w = -6.2; w <= 6.21; w += 0.45) {
+      s.rod(...nose, 3, 7 + w, 2.6 + (flex * Math.abs(w)) / 6.2, 0.45, 'J');
+    }
+    // Ruled lines across the wings and the crease of the keel underneath
+    for (const side of [-1, 1]) {
+      s.rod(15, 7 + side * 1.6, 2.95, 5, 7 + side * 5.1, 2.95 + flex * 0.8, 0.3, 'L');
+    }
+    s.rod(5, 7, 1.4, 19.6, 7, 2.3, 0.7, 'j');
+    // The pilot: body, head, snout, goggles, ears, a red scarf streaming back, tail
+    s.ell(10.4, 7, 4.8, 3.2, 2.4, 2.2, 'Q');
+    s.ell(10.8, 7, 3.9, 2.4, 1.8, 1.2, 'q');
+    s.ell(13.6, 7, 6.2, 2.1, 2, 1.9, 'Q');
+    s.ell(15.6, 7, 5.9, 1.1, 1, 0.9, 'Q');
+    s.ell(16.7, 7, 5.9, 0.45, 0.45, 0.45, 'R');
+    s.rod(14, 5.1, 7.1, 14, 8.9, 7.1, 0.45, 'K');
+    s.ell(14.9, 6.1, 7, 0.6, 0.65, 0.65, 'N');
+    s.ell(14.9, 7.9, 7, 0.6, 0.65, 0.65, 'N');
+    s.cyl(12.6, 4.8, 7.6, 8.1, 1.3, 'R');
+    s.cyl(12.6, 9.2, 7.6, 8.1, 1.3, 'R');
+    s.rod(12.2, 7, 5.4, 7.8, 7 + (frame === 0 ? 0.9 : -0.9), 6.2, 0.55, 'F');
+    s.rod(8.4, 7, 3.6, 5.6, 7 + (frame === 0 ? -1 : 1), 3.2, 0.35, 'R');
+  },
+};
+
 export const lightsOutVoxels: VoxelSet = {
   detail: 1.6,
   materials: MATERIALS,
@@ -333,8 +405,7 @@ export const lightsOutVoxels: VoxelSet = {
     cannon: spoonGunner,
     pulse: drummer,
     sniper: proneSniper,
-    // PLACEHOLDER until the real Dart Ranger model lands
-    harpoon: proneSniper,
+    harpoon: dartRanger,
   },
   creeps: {
     normal: scamp,
@@ -343,8 +414,7 @@ export const lightsOutVoxels: VoxelSet = {
     swift: scurrier,
     regen: sugarlump,
     boss: gnawbone,
-    // PLACEHOLDER until the real paper-plane mouse lands
-    flier: scurrier,
+    flier: paperPilot,
   },
   heroes: {
     vanguard: herald,
