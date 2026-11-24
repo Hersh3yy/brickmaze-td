@@ -33,6 +33,12 @@ export function matchColorPairSynergy(a: BrickColor, b: BrickColor): SynergyInfo
       return SYNERGY_CATALOG.wildfire;
     case pairKey('yellow', 'green'):
       return SYNERGY_CATALOG.static_venom;
+    case pairKey('yellow', 'purple'):
+      return SYNERGY_CATALOG.prism;
+    case pairKey('red', 'purple'):
+      return SYNERGY_CATALOG.hexfire;
+    case pairKey('green', 'purple'):
+      return SYNERGY_CATALOG.witchbrew;
     default:
       return null;
   }
@@ -122,6 +128,8 @@ export function computeTileModifiers(
     burnDpsRatio: 0,
     armorShred: false,
     spreadVenomOnChain: false,
+    pierceCount: 0,
+    magicDamage: false,
     brickColors: [],
     activeSynergies: [],
   };
@@ -182,6 +190,14 @@ export function computeTileModifiers(
         }
         mod.poisonDpsRatio += 0.44 * scale;
         break;
+      case 'purple':
+        // Arcane: precision. Reach, crits, shots that pass through, and magic damage
+        // that ignores armor (the answer to armored waves and long flier lines).
+        mod.rangeMult += 0.22 * scale;
+        mod.critChance += 0.12 * scale;
+        mod.pierceCount += isSecondaryStack ? 1 : scale >= 1 ? 1 : 0;
+        mod.magicDamage = true;
+        break;
     }
   };
 
@@ -231,6 +247,23 @@ export function computeTileModifiers(
         mod.slowFactor = Math.max(mod.slowFactor, 0.35);
         mod.slowDuration = Math.max(mod.slowDuration, 2.8);
         mod.poisonDpsRatio = Math.max(mod.poisonDpsRatio, 0.44);
+        break;
+      case 'prism':
+        // Yellow + Purple: sharper, longer chains
+        mod.chainCount = Math.max(mod.chainCount, 2) + 1;
+        mod.critChance += 0.08;
+        break;
+      case 'hexfire':
+        // Red + Purple: bigger burning splash and harder crits
+        mod.extraSplashRadius += 20;
+        mod.damageMult += 0.12;
+        mod.critChance += 0.06;
+        break;
+      case 'witchbrew':
+        // Green + Purple: stronger, longer venom
+        mod.poisonDpsRatio += 0.2;
+        mod.slowFactor = Math.max(mod.slowFactor, 0.3);
+        mod.slowDuration = Math.max(mod.slowDuration, 2.8) + 0.8;
         break;
       case 'overcharge':
         // Same color link amplifies element

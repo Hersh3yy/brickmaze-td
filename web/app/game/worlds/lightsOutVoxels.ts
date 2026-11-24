@@ -333,6 +333,8 @@ export const lightsOutVoxels: VoxelSet = {
     cannon: spoonGunner,
     pulse: drummer,
     sniper: proneSniper,
+    // PLACEHOLDER until the real Dart Ranger model lands
+    harpoon: proneSniper,
   },
   creeps: {
     normal: scamp,
@@ -341,6 +343,8 @@ export const lightsOutVoxels: VoxelSet = {
     swift: scurrier,
     regen: sugarlump,
     boss: gnawbone,
+    // PLACEHOLDER until the real paper-plane mouse lands
+    flier: scurrier,
   },
   heroes: {
     vanguard: herald,

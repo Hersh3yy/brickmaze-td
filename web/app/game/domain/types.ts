@@ -1,4 +1,5 @@
-export type BrickColor = 'yellow' | 'red' | 'green';
+// 'purple' is Arcane: range, crits, piercing shots and magic damage (ignores armor).
+export type BrickColor = 'yellow' | 'red' | 'green' | 'purple';
 
 export type CellKind =
   | 'OPEN'
@@ -12,7 +13,8 @@ export type CellKind =
   | 'ACTIVE_BRICK'
   | 'MASTER_BRICK';
 
-export type TowerType = 'repeater' | 'cannon' | 'sniper' | 'pulse';
+// 'harpoon': long-range anti-air bolt that pins its target (double damage to fliers).
+export type TowerType = 'repeater' | 'cannon' | 'sniper' | 'pulse' | 'harpoon';
 
 // 'fresh' = like 'first', but prefers creeps that do not already carry this tower's
 // slow / poison / burn, so effect towers spread their debuffs instead of stacking them.
@@ -75,7 +77,9 @@ export interface Tower {
   investedGold: number;
 }
 
-export type CreepTrait = 'normal' | 'swarm' | 'swift' | 'armored' | 'regen' | 'boss';
+// 'flier' ignores the maze: it flies straight from checkpoint to checkpoint, and cannons
+// (lobbed shells) cannot hit it.
+export type CreepTrait = 'normal' | 'swarm' | 'swift' | 'armored' | 'regen' | 'boss' | 'flier';
 
 /** A hero escorting its wave: the vanguard leads and speeds the wave up, the warden trails and heals it. */
 export type HeroRole = 'vanguard' | 'warden';
@@ -111,6 +115,8 @@ export interface Creep {
   radius: number;
   /** Set on the two hero creeps of an escort wave. */
   hero?: HeroRole;
+  /** Seconds left pinned in place by a Harpoon. */
+  pinTimer?: number;
 }
 
 export interface Projectile {
@@ -144,6 +150,10 @@ export interface Projectile {
   spreadVenomOnChain: boolean;
   isCrit: boolean;
   ignoreArmor: boolean;
+  /** Arcane ammo: all of this shot's damage is magic (ignores armor). */
+  magic?: boolean;
+  /** Arcane ammo: how many extra creeps near the target the shot passes through. */
+  pierceCount?: number;
   sourceTowerId: string;
 }
 
@@ -191,7 +201,7 @@ export interface FloatingText {
 
 /** A colour-pair synergy. Its name and effect text live in the World (game/worlds). */
 export interface SynergyInfo {
-  id: 'plasma' | 'wildfire' | 'static_venom' | 'overcharge';
+  id: 'plasma' | 'wildfire' | 'static_venom' | 'overcharge' | 'prism' | 'hexfire' | 'witchbrew';
   colors: [BrickColor, BrickColor];
 }
 
@@ -222,6 +232,10 @@ export interface TileCombatModifiers {
   burnDpsRatio: number;
   armorShred: boolean;
   spreadVenomOnChain: boolean;
+  /** Arcane: extra creeps each hit passes through. */
+  pierceCount: number;
+  /** Arcane: every hit is magic damage and ignores armor. */
+  magicDamage: boolean;
   brickColors: BrickColor[];
   activeSynergies: SynergyInfo[];
 }

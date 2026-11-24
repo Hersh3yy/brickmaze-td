@@ -50,6 +50,7 @@ const sprites: WorldSprites = {
     yellow: { c: '#F5B82E', l: '#FDE68A', d: '#B7791F' },
     red: { c: '#E8553E', l: '#FDBA9B', d: '#9B2C1E' },
     green: { c: '#2BB5A0', l: '#9EEBDD', d: '#167366' },
+    purple: { c: '#B07CE8', l: '#E5D4FA', d: '#6E3FA8' },
   },
   turretPalette: {
     o: INK,
@@ -148,6 +149,25 @@ const sprites: WorldSprites = {
       'oggggggggggggo..',
       '.oHHHHHHHHHHo...',
     ],
+    // PLACEHOLDER art (copy of sniper) until the real harpoon art lands
+    harpoon: [
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '..oooo..........',
+      '.ogGGGo....okko.',
+      'ooHHHHoooooooooo',
+      'oGgGGGHHHHNNNNNm',
+      'oGGGGGGGGGoooooo',
+      'oHHHooHHHHo.....',
+      '.ooo..oooo......',
+      '.oooooooooooo...',
+      'oggggggggggggo..',
+      '.oHHHHHHHHHHo...',
+    ],
   },
   creeps: {
     // Scamp: brown house mouse, round pink ear, pointed snout, pink tail. Faces right.
@@ -218,6 +238,23 @@ const sprites: WorldSprites = {
       ['...oDo...oDo..', '..oo......oo..'],
       ['.....oDooDo...', '.....oo..oo...']
     ),
+    // PLACEHOLDER art (copy of swift) until the real flier art lands
+    flier: walk(
+      [
+        '..............',
+        '..............',
+        '..............',
+        '.......ooo....',
+        '......oPPPo...',
+        '.LL..oooooooo.',
+        '....oBLLBBBEBo',
+        'PPPoBBBBBBBBBP',
+        '.LL.oDDDDDDoo.',
+        '....oDDDDDo...',
+      ],
+      ['...oDo...oDo..', '..oo......oo..'],
+      ['.....oDooDo...', '.....oo..oo...']
+    ),
     // Sugarlump: a fat mouse with a white sugar cube strapped to its back.
     regen: walk(
       [
@@ -265,6 +302,7 @@ const sprites: WorldSprites = {
       y: '#8C6F1E',
     }),
     swift: mouse('#A07A55', '#C9A57F', '#6A4E34', { L: '#EBDCC8' }),
+    flier: mouse('#A07A55', '#C9A57F', '#6A4E34', { L: '#EBDCC8' }),
     regen: mouse('#9C7B62', '#C4A58C', '#664D3B', { W: '#FBFAF6', w: '#D9D3C7' }),
     boss: mouse('#6F6B70', '#9C97A0', '#45424A', { Y: '#D9B23F' }),
   },
@@ -351,6 +389,17 @@ const sprites: WorldSprites = {
       '........',
       '........',
     ],
+    // PLACEHOLDER art (copy of yellow bolt) until the real Arcane projectile lands
+    purple: [
+      '....oo..',
+      '..ooWLo.',
+      '.oLLWLo.',
+      'oLWWWLoo',
+      '.ooWLLo.',
+      '..oLoo..',
+      '........',
+      '........',
+    ],
     // slime glob with a drip
     green: [
       '..oooo..',
@@ -368,6 +417,7 @@ const sprites: WorldSprites = {
     red: { o: '#7A2214', F: '#E8553E', W: '#FDE68A' },
     yellow: { o: '#7A4E0E', L: '#F5B82E', W: '#FFFFFF' },
     green: { o: '#0E4A42', G: '#2BB5A0', L: '#9EEBDD', W: '#F0FDFA' },
+    purple: { o: '#3E1E66', L: '#B07CE8', W: '#FFFFFF' },
   },
   emblems: {
     // match flame
@@ -401,6 +451,17 @@ const sprites: WorldSprites = {
       '..x.x..',
       '..x.x..',
       '..x....',
+      '.......',
+    ],
+    // Gem (Arcane / Glitter)
+    purple: [
+      '...x...',
+      '..xxx..',
+      '.xx.xx.',
+      'xx...xx',
+      '.xx.xx.',
+      '..xxx..',
+      '...x...',
       '.......',
     ],
   },
@@ -482,6 +543,10 @@ export const lightsOut: WorldDefinition = {
         name: 'Needlepoint',
         description: 'Lies flat behind a sewing-needle rifle with the longest reach. Goes straight through shields.',
       },
+      harpoon: {
+        name: 'Dart Ranger',
+        description: 'Shoots suction-cup darts on a string that pin a mouse in place. Double damage to paper planes, half to mice on the floor.',
+      },
     },
     elements: {
       yellow: {
@@ -502,12 +567,21 @@ export const lightsOut: WorldDefinition = {
         bonusShort: 'Slime · Slow & Sting',
         bonusDetail: 'Sticky slime slows mice by 35% and stings more with every coat.',
       },
+      purple: {
+        label: 'Purple',
+        elementName: 'Glitter',
+        bonusShort: 'Glitter · Reach & Pierce',
+        bonusDetail: '+22% reach, +12% crit, shots pass through to the next mouse, and glitter goes straight through shields.',
+      },
     },
     synergies: {
       plasma: { name: 'Short Circuit', shortEffect: 'Fire splash + jumping sparks, +20% speed' },
       wildfire: { name: 'Grease Fire', shortEffect: 'Huge fire splash + shield shred + burn' },
       static_venom: { name: 'Fizzing Slime', shortEffect: 'Jumping sparks spread slime slow and sting' },
       overcharge: { name: 'Fresh Batteries', shortEffect: 'Same colour link: +45% element power' },
+      prism: { name: 'Sparkle Arc', shortEffect: 'Sparks jump further + sharper crits' },
+      hexfire: { name: 'Glitter Bomb', shortEffect: 'Bigger fiery splash + harder crits' },
+      witchbrew: { name: 'Glitter Slime', shortEffect: 'Stickier, longer slime' },
     },
     maps: {
       crossroad: { name: 'The Kitchen', description: 'Open tiles from the mouse hole to the pantry door.' },
@@ -520,6 +594,7 @@ export const lightsOut: WorldDefinition = {
       armored: 'Capshields',
       swift: 'Scurriers',
       regen: 'Sugarlumps',
+      flier: 'Paper Pilots',
     },
     bosses: ['Old Gnawbone', 'Grand Whisker', 'Baron Rindsworth', 'Matron Mildew', 'The Cellar Tyrant', 'Gnasher Rex'],
     heroes: { vanguard: 'Toothpick Herald', warden: 'Mendwife' },

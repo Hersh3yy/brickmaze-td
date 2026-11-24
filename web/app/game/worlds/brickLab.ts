@@ -21,6 +21,7 @@ const sprites: WorldSprites = {
     yellow: { c: '#F59E0B', l: '#FEF08A', d: '#B45309' },
     red: { c: '#EF4444', l: '#FCA5A5', d: '#991B1B' },
     green: { c: '#10B981', l: '#A7F3D0', d: '#047857' },
+    purple: { c: '#A855F7', l: '#E9D5FF', d: '#6B21A8' },
   },
   turretPalette: { o: '#0F172A', O: '#0F172A', S: '#475569', M: '#94A3B8', m: '#E2E8F0' },
   // Elite: gold housing and a bright barrel, outlined in a gold glow
@@ -81,6 +82,25 @@ const sprites: WorldSprites = {
       '................',
     ],
     sniper: [
+      '................',
+      '................',
+      '...ooooooo......',
+      '..oSSSSSSSo.....',
+      '.oSSCCCCCSSo....',
+      '.oSCLLLLCCSooooo',
+      '.oSCDDDDCCSoMMMo',
+      '.oSCLLLLCCSoLLLo',
+      '.oSCLLLLCCSoLLLo',
+      '.oSCDDDDCCSoMMMo',
+      '.oSCLLLLCCSooooo',
+      '.oSSCCCCCSSo....',
+      '..oSSSSSSSo.....',
+      '...ooooooo......',
+      '................',
+      '................',
+    ],
+    // PLACEHOLDER art (copy of sniper) until the real harpoon art lands
+    harpoon: [
       '................',
       '................',
       '...ooooooo......',
@@ -208,6 +228,31 @@ const sprites: WorldSprites = {
         '..............',
       ],
     ],
+    // PLACEHOLDER art (copy of swift) until the real flier art lands
+    flier: [
+      [
+        '.....ooooo....',
+        '....oLLLLLo...',
+        '...oLBBBBBBo..',
+        '..oBBBoEEoBBo.',
+        '.oLLBBBBBBBBo.',
+        '..ooDDDDDDDo..',
+        '....oo...oo...',
+        '...oDo....oDo.',
+        '..............',
+      ],
+      [
+        '..............',
+        '.....ooooo....',
+        '....oLLLLLo...',
+        '...oLBBBBBBo..',
+        '..oBBBoEEoBBo.',
+        '.oLLBBBBBBBBo.',
+        '..ooDDDDDDDo..',
+        '....oDo..oDo..',
+        '..............',
+      ],
+    ],
     regen: [
       [
         '....oooooo....',
@@ -272,6 +317,7 @@ const sprites: WorldSprites = {
     swarm: { o: '#0F172A', L: '#FEF9C3', B: '#FACC15', D: '#A16207', E: '#0F172A' },
     armored: { o: '#0F172A', L: '#CBD5E1', B: '#64748B', D: '#334155', E: '#38BDF8' },
     swift: { o: '#0F172A', L: '#FED7AA', B: '#FB923C', D: '#C2410C', E: '#FEF08A' },
+    flier: { o: '#0F172A', L: '#FED7AA', B: '#FB923C', D: '#C2410C', E: '#FEF08A' },
     regen: { o: '#0F172A', L: '#A7F3D0', B: '#10B981', D: '#065F46', E: '#FEF08A' },
     boss: { o: '#0F172A', L: '#FDA4AF', B: '#E11D48', D: '#881337', E: '#FDE047' },
   },
@@ -306,6 +352,17 @@ const sprites: WorldSprites = {
       '........',
       '........',
     ],
+    // PLACEHOLDER art (copy of yellow bolt) until the real Arcane projectile lands
+    purple: [
+      '....oo..',
+      '..ooWLo.',
+      '.oLLWLo.',
+      'oLWWWLoo',
+      '.ooWLLo.',
+      '..oLoo..',
+      '........',
+      '........',
+    ],
     green: [
       '..oooo..',
       '.oGGGGoo',
@@ -322,6 +379,7 @@ const sprites: WorldSprites = {
     red: { o: '#7F1D1D', F: '#EF4444', W: '#FEF08A' },
     yellow: { o: '#78350F', L: '#F59E0B', W: '#FFFFFF' },
     green: { o: '#064E3B', G: '#10B981', L: '#A7F3D0', W: '#ECFDF5', D: '#047857' },
+    purple: { o: '#3B0764', L: '#A855F7', W: '#FFFFFF' },
   },
   emblems: {
     red: [
@@ -353,6 +411,17 @@ const sprites: WorldSprites = {
       '.xxxxx.',
       '.xxxxx.',
       '..xxx..',
+    ],
+    // Gem (Arcane / Glitter)
+    purple: [
+      '...x...',
+      '..xxx..',
+      '.xx.xx.',
+      'xx...xx',
+      '.xx.xx.',
+      '..xxx..',
+      '...x...',
+      '.......',
     ],
   },
 };
@@ -427,6 +496,10 @@ export const brickLab: WorldDefinition = {
         name: 'Rail Sniper',
         description: 'Extreme range railgun that ignores armor with heavy single hits.',
       },
+      harpoon: {
+        name: 'Harpoon',
+        description: 'Fires a tethered bolt that pins its target. Double damage to fliers, half to ground creeps.',
+      },
     },
     elements: {
       yellow: {
@@ -447,12 +520,21 @@ export const brickLab: WorldDefinition = {
         bonusShort: 'Venom · Slow & DoT',
         bonusDetail: 'Slows targets by 35% & applies stacking corrosive DoT.',
       },
+      purple: {
+        label: 'Purple',
+        elementName: 'Arcane',
+        bonusShort: 'Arcane · Range & Pierce',
+        bonusDetail: '+22% range, +12% crit, shots pass through to a creep behind, and all damage ignores armor.',
+      },
     },
     synergies: {
       plasma: { name: 'Plasma', shortEffect: 'Fire Splash + Lightning Chain +20% SPD' },
       wildfire: { name: 'Wildfire', shortEffect: 'Huge Fire Splash + Armor Shred + Burn' },
       static_venom: { name: 'Static Venom', shortEffect: 'Lightning Chains spread Venom Slow & DoT' },
       overcharge: { name: 'Overcharge', shortEffect: 'Same color link: +45% Elemental Power' },
+      prism: { name: 'Prism Arc', shortEffect: 'Longer lightning chains + sharper crits' },
+      hexfire: { name: 'Hexfire', shortEffect: 'Bigger fire splash + harder crits' },
+      witchbrew: { name: 'Witchbrew', shortEffect: 'Stronger, longer venom' },
     },
     maps: {
       crossroad: {
@@ -474,6 +556,7 @@ export const brickLab: WorldDefinition = {
       armored: 'Iron Beetles',
       swift: 'Dash Hoppers',
       regen: 'Bio-Oozers',
+      flier: 'Hover Drones',
     },
     bosses: ['Iron Golem', 'Chrome Walker', 'Titan Assembler', 'Obsidian Boss', 'Core Colossus', 'Dreadnought'],
     heroes: { vanguard: 'Vanguard', warden: 'Warden' },

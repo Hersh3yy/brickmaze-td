@@ -47,6 +47,7 @@ const AMMO_HINT: Record<BrickColor, string> = {
   yellow: 'Speed + Chain',
   red: 'Bonus Damage + Splash',
   green: 'Slow + Damage over time',
+  purple: 'Range + Pierce, ignores armor',
 };
 
 const world = useWorld();

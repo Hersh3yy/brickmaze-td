@@ -732,7 +732,7 @@ function drawMuzzleFlash(ctx: CanvasRenderingContext2D, x: number, y: number, co
  * frame: every aim direction of the towers on the board, and every creep in all walking
  * directions, so the wave itself never waits on a bake.
  */
-const CREEP_TRAITS: Creep['trait'][] = ['normal', 'swarm', 'armored', 'swift', 'regen', 'boss'];
+const CREEP_TRAITS: Creep['trait'][] = ['normal', 'swarm', 'armored', 'swift', 'regen', 'boss', 'flier'];
 let voxelWarmKey = -1;
 function warmVoxelSprites(frame: RenderFrameInput, key: number, budgetMs = 3) {
   if (key === voxelWarmKey) return;
@@ -798,6 +798,9 @@ function drawCreep(ctx: CanvasRenderingContext2D, creep: Creep) {
   const drawH = voxel ? Math.round(voxel.height + 3) : Math.round((sprite.height / sprite.width) * drawW);
   const x = Math.round(creep.x);
   const y = Math.round(creep.y);
+  // Fliers are drawn raised above their shadow with a slow bob, so they read as airborne.
+  // (Placeholder look until the Worlds have real flier art.)
+  const lift = creep.trait === 'flier' ? 12 + Math.round(Math.sin(creep.animTime * 3) * 2) : 0;
 
   const isSlowed = creep.slowTimer > 0;
   const isHeavySlow = isSlowed && creep.slowFactor >= 0.45;
@@ -831,9 +834,9 @@ function drawCreep(ctx: CanvasRenderingContext2D, creep: Creep) {
 
   // Blit the creep: a voxel sprite stands on its ground point; a pixel sprite is centred.
   const spriteLeft = Math.round(x - drawW / 2);
-  const spriteTop = voxel ? Math.round(y + 5 - drawH) : Math.round(y - drawH / 2);
+  const spriteTop = (voxel ? Math.round(y + 5 - drawH) : Math.round(y - drawH / 2)) - lift;
   if (voxel) {
-    ctx.drawImage(sprite, Math.round(x - voxel.groundX), Math.round(y + 5 - voxel.groundY));
+    ctx.drawImage(sprite, Math.round(x - voxel.groundX), Math.round(y + 5 - voxel.groundY) - lift);
   } else if (spriteAtlas.creepsFaceSideways() && creepWalksLeft(creep)) {
     ctx.save();
     ctx.translate(spriteLeft + drawW, spriteTop);

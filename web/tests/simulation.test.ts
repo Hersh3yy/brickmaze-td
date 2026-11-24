@@ -8,6 +8,7 @@ import {
   createSimState,
   eliteCount,
   eliteModifiers,
+  flightPathFor,
   stepSimulation,
 } from '~/game/domain/simulation'
 import type { SimWorld } from '~/game/domain/simulation'
@@ -221,5 +222,69 @@ describe('elite towers', () => {
     expect(elite.fireRateMult - 1).toBeCloseTo((base.fireRateMult - 1) * 1.5, 5)
     expect(elite.slowFactor).toBe(0) // a lightning brick never slows, Elite or not
     expect(elite.critChance).toBeCloseTo(base.critChance + 0.1, 5)
+  })
+})
+
+describe('fliers, Arcane and the Harpoon', () => {
+  function oneCreep(trait: 'flier' | 'normal', armor = 0) {
+    const grid = createInitialGrid('crossroad')
+    const path = computeMazePath(grid, 'crossroad').path
+    const tile = path[6]!
+    return {
+      grid, path,
+      creep: {
+        id: 'c1', wave: 1, trait, x: tile.x * 36 + 18, y: tile.y * 36 + 18,
+        path, pathIndex: 6, hp: 10000, maxHp: 10000, speed: 0, armor, bounty: 1,
+        slowTimer: 0, slowFactor: 0, poisonTimer: 0, poisonDps: 0, burnTimer: 0, burnDps: 0,
+        shredTimer: 0, pinTimer: 0, animTime: 0, radius: 8,
+      },
+      spot: { x: tile.x, y: tile.y + 1 },
+    }
+  }
+
+  function fight(trait: 'flier' | 'normal', type: TowerType, color?: 'purple', armor = 0, seconds = 2) {
+    const { grid, path, creep, spot } = oneCreep(trait, armor)
+    grid[spot.y]![spot.x] = color
+      ? { x: spot.x, y: spot.y, kind: 'ACTIVE_BRICK', color }
+      : { x: spot.x, y: spot.y, kind: 'GRAY_WALL' }
+    const sim = createSimState(path.length)
+    sim.creeps.push(creep)
+    const world: SimWorld = {
+      grid, phase: 'COMBAT', wave: 1, difficulty: 'standard', endlessMode: false,
+      lives: 20, gold: 0, towers: [tower('t1', type, spot.x, spot.y)], path, speed: 1,
+    }
+    let pinnedAtSomePoint = false
+    for (let k = 0; k < seconds * 20; k++) {
+      stepSimulation(sim, world, 0.05, k * 50, {}, mulberry32(9))
+      if ((creep.pinTimer ?? 0) > 0) pinnedAtSomePoint = true
+    }
+    return { damage: 10000 - creep.hp, pinnedAtSomePoint }
+  }
+
+  it('flier waves start at wave 7 and fly a straight line through the checkpoints only', () => {
+    expect(getWaveDefinition(2).trait).toBe('swarm')
+    expect(getWaveDefinition(7).trait).toBe('flier')
+    expect(getWaveDefinition(7).modifier).toBeUndefined() // no heroes on flier waves
+    const grid = createInitialGrid('crossroad')
+    const flight = flightPathFor(grid)
+    expect(flight.length).toBe(5) // Start, CP1, CP2, CP3, Exit
+  })
+
+  it('cannons cannot hit fliers', () => {
+    expect(fight('flier', 'cannon').damage).toBe(0)
+    expect(fight('normal', 'cannon').damage).toBeGreaterThan(0)
+  })
+
+  it('the Harpoon does double damage to fliers, half to ground, and pins', () => {
+    const air = fight('flier', 'harpoon')
+    const ground = fight('normal', 'harpoon')
+    expect(air.damage).toBeGreaterThan(ground.damage * 3)
+    expect(air.pinnedAtSomePoint).toBe(true)
+  })
+
+  it('Arcane damage ignores armor', () => {
+    const plainVsArmor = fight('normal', 'repeater', undefined, 0.5).damage
+    const arcaneVsArmor = fight('normal', 'repeater', 'purple', 0.5).damage
+    expect(arcaneVsArmor).toBeGreaterThan(plainVsArmor * 1.6)
   })
 })

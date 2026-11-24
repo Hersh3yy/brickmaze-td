@@ -42,9 +42,11 @@ export const DIFFICULTY_DEFS: Record<DifficultyId, DifficultyDefinition> = {
     label: 'Standard',
     tagline: '20 lives · Balanced 30-wave pace',
     startingLives: 20,
-    // Tuned with `npm run balance` (Nov 2026): the strong bot wins about 70% on
-    // Standard, 35-40% on Hard and well under 10% on Brutal, across all three maps.
-    hpMult: 1.5,
+    // Tuned with `npm run balance` (24 Nov 2026, after fliers, Arcane and the Harpoon):
+    // Standard should be winnable: strong builds win 90-100%, an all-repeater build ~60%,
+    // a spread-thin build reaches the final boss. Hard and Brutal are the real challenge.
+    // Strategy matters more than difficulty; a cannon-only build cannot beat fliers.
+    hpMult: 1.15,
     speedMult: 1.0,
     armorBonus: 0,
     xpMult: 1.0,
@@ -52,7 +54,7 @@ export const DIFFICULTY_DEFS: Record<DifficultyId, DifficultyDefinition> = {
   hard: {
     id: 'hard',
     label: 'Hard',
-    tagline: '15 lives · +10% HP · Faster waves · +35% XP',
+    tagline: '15 lives · +43% HP · Faster waves · +35% XP',
     startingLives: 15,
     hpMult: 1.65,
     speedMult: 1.08,
@@ -62,7 +64,7 @@ export const DIFFICULTY_DEFS: Record<DifficultyId, DifficultyDefinition> = {
   brutal: {
     id: 'brutal',
     label: 'Brutal',
-    tagline: '10 lives · +20% HP · Heavy armor · +75% XP',
+    tagline: '10 lives · +57% HP · Heavy armor · +75% XP',
     startingLives: 10,
     hpMult: 1.8,
     speedMult: 1.15,
@@ -79,7 +81,7 @@ export interface BrickColorMeta {
   darkHex: string;
 }
 
-export const BRICK_COLOR_LIST: BrickColor[] = ['yellow', 'red', 'green'];
+export const BRICK_COLOR_LIST: BrickColor[] = ['yellow', 'red', 'green', 'purple'];
 
 export const BRICK_COLORS: Record<BrickColor, BrickColorMeta> = {
   yellow: {
@@ -100,6 +102,12 @@ export const BRICK_COLORS: Record<BrickColor, BrickColorMeta> = {
     lightHex: '#6EE7B7',
     darkHex: '#047857',
   },
+  purple: {
+    id: 'purple',
+    hex: '#A855F7',
+    lightHex: '#E9D5FF',
+    darkHex: '#6B21A8',
+  },
 };
 
 export const SYNERGY_CATALOG: Record<SynergyInfo['id'], SynergyInfo> = {
@@ -118,6 +126,18 @@ export const SYNERGY_CATALOG: Record<SynergyInfo['id'], SynergyInfo> = {
   overcharge: {
     id: 'overcharge',
     colors: ['yellow', 'yellow'],
+  },
+  prism: {
+    id: 'prism',
+    colors: ['yellow', 'purple'],
+  },
+  hexfire: {
+    id: 'hexfire',
+    colors: ['red', 'purple'],
+  },
+  witchbrew: {
+    id: 'witchbrew',
+    colors: ['green', 'purple'],
   },
 };
 
@@ -138,7 +158,7 @@ export interface TowerDefinition {
 }
 
 /** Shop, tile menu and number keys all follow this order: TOWER_LIST[i] has hotkey i + 1. */
-export const TOWER_LIST: TowerType[] = ['repeater', 'cannon', 'pulse', 'sniper'];
+export const TOWER_LIST: TowerType[] = ['repeater', 'cannon', 'pulse', 'sniper', 'harpoon'];
 
 export const TOWER_DEFS: Record<TowerType, TowerDefinition> = {
   repeater: {
@@ -193,7 +213,34 @@ export const TOWER_DEFS: Record<TowerType, TowerDefinition> = {
     armorPierce: true,
     hotkey: '4',
   },
+  harpoon: {
+    type: 'harpoon',
+    shortRole: 'Anti-Air Pin',
+    cost: 80,
+    upgradeCosts: [110, 200, 1150],
+    baseDamage: 34,
+    baseRange: 5.0,
+    baseFireRate: 0.8,
+    projectileSpeed: 720,
+    baseSplashRadius: 0,
+    armorPierce: false,
+    hotkey: '5',
+  },
 };
+
+// --- Harpoon and fliers -----------------------------------------------------
+/** Harpoon damage against fliers and against creeps on the ground. */
+export const HARPOON_AIR_MULT = 2;
+export const HARPOON_GROUND_MULT = 0.5;
+/** Seconds a Harpoon hit pins its target in place (bosses: a fraction of it). */
+export const HARPOON_PIN_SECONDS = 0.5;
+export const HARPOON_BOSS_PIN_SHARE = 0.4;
+/** First wave that can be a flier wave; from then on they take the swarm slot of each cycle. */
+export const FIRST_FLIER_WAVE = 7;
+
+export function isFlierWave(wave: number): boolean {
+  return wave >= FIRST_FLIER_WAVE && (wave - 1) % 5 === 1;
+}
 
 /** Map geometry. Map names and descriptions live in the World (game/worlds). */
 export interface MapLayoutDefinition {
@@ -323,7 +370,8 @@ export function getWaveModifier(wave: number): WaveModifier | undefined {
   if (wave % 5 === 0) return undefined;
   if (wave % 3 === 0) return 'rally';
   const isArmoredWave = (wave - 1) % 5 === 2;
-  if (wave >= 4 && wave % 3 === 1 && !isArmoredWave) return 'escort';
+  // Heroes walk the maze; flier waves fly over it, so they never get an escort either.
+  if (wave >= 4 && wave % 3 === 1 && !isArmoredWave && !isFlierWave(wave)) return 'escort';
   return undefined;
 }
 
@@ -363,6 +411,22 @@ function baseWaveDefinition(
       bounty: Math.round(baseBounty * 8),
       spawnInterval: 2.2,
       clearBonus: clearBonus + 30,
+    };
+  }
+
+  // From wave 7 the swarm slot becomes a flier wave: fewer, frailer creeps that fly
+  // straight over the maze, so they spend far less time in range.
+  if (isFlierWave(wave)) {
+    return {
+      wave,
+      trait: 'flier',
+      count: 14 + Math.min(12, Math.floor(wave * 0.4)),
+      hp: Math.round(baseHp * 0.2),
+      speed: scaleSpeed(1.45 + Math.min(0.4, wave * 0.01)),
+      armor: scaleArmor(0),
+      bounty: Math.max(3, Math.round(baseBounty * 0.8)),
+      spawnInterval: 0.55,
+      clearBonus,
     };
   }
 

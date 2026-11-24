@@ -103,7 +103,7 @@ const BAR =
       </span>
     </button>
 
-    <div class="hidden sm:grid grid-cols-4 gap-2 sm:gap-2.5 w-full">
+    <div class="hidden sm:grid grid-cols-5 gap-2 sm:gap-2.5 w-full">
       <TurretShopCard
         v-for="tType in TOWER_LIST"
         :key="tType"

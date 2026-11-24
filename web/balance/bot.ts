@@ -23,6 +23,7 @@ import {
   canBecomeElite,
   createSimState,
   defaultTargetingFor,
+  flightPathFor,
   stepSimulation,
 } from '../app/game/domain/simulation';
 import type { SimWorld } from '../app/game/domain/simulation';
@@ -50,12 +51,12 @@ export const STRATEGIES: Strategy[] = [
   { name: 'repeaters', nextTower: () => 'repeater', upgradeFirst: false },
   {
     name: 'balanced',
-    nextTower: (n) => (['repeater', 'cannon', 'sniper', 'pulse'] as const)[n % 4]!,
+    nextTower: (n) => (['repeater', 'cannon', 'sniper', 'pulse', 'harpoon'] as const)[n % 5]!,
     upgradeFirst: false,
   },
   {
     name: 'upgrader',
-    nextTower: (n) => (['repeater', 'cannon', 'sniper', 'pulse'] as const)[n % 4]!,
+    nextTower: (n) => (['repeater', 'cannon', 'sniper', 'pulse', 'harpoon'] as const)[n % 5]!,
     upgradeFirst: true,
   },
   {
@@ -96,6 +97,34 @@ export function mulberry32(seed: number) {
 }
 
 /** How many path tiles a weapon of `range` tiles standing on (x, y) can reach. */
+/** Tiles under the straight flight lines fliers take between the waypoints. */
+function flightTiles(grid: GridCell[][]): Coord[] {
+  const pts = flightPathFor(grid);
+  const out: Coord[] = [];
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const a = pts[i]!;
+    const b = pts[i + 1]!;
+    const steps = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y), 1);
+    for (let k = 0; k <= steps; k++) {
+      out.push({
+        x: Math.round(a.x + ((b.x - a.x) * k) / steps),
+        y: Math.round(a.y + ((b.y - a.y) * k) / steps),
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * How useful a weapon of `range` tiles on (x, y) is: the maze path it covers, plus half
+ * credit for the flier lines (cannons cannot hit fliers, so they get none).
+ */
+function towerValue(grid: GridCell[][], path: Coord[], type: TowerType, x: number, y: number, range: number): number {
+  const ground = coverage(path, x, y, range);
+  const air = type === 'cannon' ? 0 : coverage(flightTiles(grid), x, y, range);
+  return ground + air * 0.5;
+}
+
 function coverage(path: Coord[], x: number, y: number, range: number): number {
   let n = 0;
   const r2 = range * range;
@@ -207,7 +236,7 @@ function spend(
       if (t.level === ELITE_LEVEL - 1 && !canBecomeElite(t, towers)) continue;
       const cost = TOWER_DEFS[t.type].upgradeCosts[t.level - 1]!;
       if (cost > state.gold) continue;
-      const score = coverage(path, t.x, t.y, TOWER_DEFS[t.type].baseRange);
+      const score = towerValue(grid, path, t.type, t.x, t.y, TOWER_DEFS[t.type].baseRange);
       if (score > pickScore) {
         pick = t;
         pickScore = score;
@@ -231,7 +260,7 @@ function spend(
       for (const cell of row) {
         if (!isBrickCell(cell) || taken.has(`${cell.x},${cell.y}`)) continue;
         const mods = cachedTileModifiers(grid, cell.x, cell.y);
-        const cov = coverage(path, cell.x, cell.y, def.baseRange * mods.rangeMult);
+        const cov = towerValue(grid, path, type, cell.x, cell.y, def.baseRange * mods.rangeMult);
         // Coloured bricks load elemental ammo, so they are worth more than gray walls.
         const score = cov * (mods.primaryElement === 'kinetic' ? 1 : 1.4);
         if (!best || score > best.score) best = { x: cell.x, y: cell.y, score };

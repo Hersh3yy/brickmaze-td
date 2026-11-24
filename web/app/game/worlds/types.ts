@@ -24,7 +24,7 @@ import type { MaterialMap, VoxelBuild } from './voxel';
 export type PaletteMap = Record<string, string>;
 export type SpriteGrid = string[];
 export type AmmoElement = BrickColor | 'kinetic';
-export type SynergyId = 'plasma' | 'wildfire' | 'static_venom' | 'overcharge';
+export type SynergyId = 'plasma' | 'wildfire' | 'static_venom' | 'overcharge' | 'prism' | 'hexfire' | 'witchbrew';
 
 export interface ElementShades {
   /** body */

@@ -11,6 +11,10 @@ import {
   ELITE_LEVEL,
   MAX_ELITE_TOWERS,
   TOWER_LEVEL_SCALES,
+  HARPOON_AIR_MULT,
+  HARPOON_BOSS_PIN_SHARE,
+  HARPOON_GROUND_MULT,
+  HARPOON_PIN_SECONDS,
   HERO_BOUNTY_MULT,
   HERO_HP_MULT,
   HERO_LIVES_COST,
@@ -201,6 +205,7 @@ export function eliteModifiers(base: TileCombatModifiers): TileCombatModifiers {
     burnDpsRatio: base.burnDpsRatio * amp,
     poisonDpsRatio: base.poisonDpsRatio * amp,
     chainCount: base.chainCount > 0 ? base.chainCount + ELITE_AMPLIFY.extraChains : 0,
+    pierceCount: base.pierceCount > 0 ? base.pierceCount + 1 : 0,
     slowFactor: base.slowFactor > 0 ? Math.min(0.75, base.slowFactor + ELITE_AMPLIFY.extraSlow) : 0,
     slowDuration: base.slowDuration * (base.slowFactor > 0 ? 1.25 : 1),
     critChance: base.critChance + ELITE_AMPLIFY.extraCrit,
@@ -222,6 +227,34 @@ export function eliteCount(towers: Tower[]): number {
 /** Whether this tower may be promoted to Elite right now (gold aside). */
 export function canBecomeElite(tower: Tower, towers: Tower[]): boolean {
   return tower.level === ELITE_LEVEL - 1 && eliteCount(towers) < MAX_ELITE_TOWERS;
+}
+
+/**
+ * Fliers ignore the maze: they fly in straight lines from Start through the three
+ * checkpoints to the Exit. Those five tiles are fixed per map, so read them off the grid.
+ */
+const flightPathCache = new WeakMap<GridCell[][], Coord[]>();
+const WAYPOINT_ORDER = ['START', 'CP1', 'CP2', 'CP3', 'EXIT'] as const;
+
+export function flightPathFor(grid: GridCell[][]): Coord[] {
+  let path = flightPathCache.get(grid);
+  if (path) return path;
+  const found = new Map<string, Coord>();
+  for (const row of grid) {
+    for (const cell of row) {
+      if ((WAYPOINT_ORDER as readonly string[]).includes(cell.kind)) {
+        found.set(cell.kind, { x: cell.x, y: cell.y });
+      }
+    }
+  }
+  path = WAYPOINT_ORDER.map((k) => found.get(k)).filter((c): c is Coord => Boolean(c));
+  flightPathCache.set(grid, path);
+  return path;
+}
+
+/** Share of its route a creep has covered, so ground creeps and fliers rank fairly. */
+function routeProgress(c: Creep): number {
+  return c.pathIndex / Math.max(1, c.path.length);
 }
 
 /** Default targeting for a tower on (x, y): venom-loaded towers spread their debuff. */
@@ -362,6 +395,29 @@ export function stepSimulation(
     }
   };
 
+  // Arcane shots pass through: they also hit the nearest creeps just behind the target.
+  const PIERCE_REACH = 46;
+  const PIERCE_SHARE = 0.6;
+  const pierceFrom = (target: Creep, count: number, damage: number, sourceTowerId: string, color: string) => {
+    const hit = new Set<string>([target.id]);
+    for (let n = 0; n < count; n++) {
+      let next: Creep | null = null;
+      let best = PIERCE_REACH;
+      for (const c of sim.creeps) {
+        if (c.hp <= 0 || hit.has(c.id)) continue;
+        const d = Math.hypot(c.x - target.x, c.y - target.y);
+        if (d < best) {
+          best = d;
+          next = c;
+        }
+      }
+      if (!next) return;
+      hit.add(next.id);
+      spawnRing(next.x, next.y, 10, color, 0.12);
+      damageCreep(next, damage * PIERCE_SHARE, { isCrit: false, magic: true, sourceTowerId });
+    }
+  };
+
   // Yellow Lightning chains jumping out from an impact target
   const triggerLightningChain = (
     originCreep: Creep,
@@ -483,7 +539,7 @@ export function stepSimulation(
         trait: waveDef.trait,
         x: startTile.x * TILE_SIZE + TILE_SIZE / 2,
         y: startTile.y * TILE_SIZE + TILE_SIZE / 2,
-        path: world.path.slice(),
+        path: waveDef.trait === 'flier' ? flightPathFor(world.grid).slice() : world.path.slice(),
         pathIndex: 1,
         hp,
         maxHp: hp,
@@ -497,6 +553,7 @@ export function stepSimulation(
         burnTimer: 0,
         burnDps: 0,
         shredTimer: 0,
+        pinTimer: 0,
         animTime: rng() * 6,
         radius: waveDef.trait === 'boss' ? 13 : hero ? 11 : 8,
         hero,
@@ -565,7 +622,13 @@ export function stepSimulation(
     // Escort aura: while the vanguard lives the whole wave moves faster, the vanguard
     // included, so it stays out in front of the creeps it is leading.
     const auraSpeed = vanguardAlive ? 1 + VANGUARD_SPEED_BONUS : 1;
-    let remaining = c.speed * auraSpeed * (1 - c.slowFactor) * TILE_SIZE * dt;
+    // A Harpoon hit pins the creep in place for a moment.
+    let pinned = false;
+    if (c.pinTimer && c.pinTimer > 0) {
+      c.pinTimer -= dt;
+      pinned = true;
+    }
+    let remaining = pinned ? 0 : c.speed * auraSpeed * (1 - c.slowFactor) * TILE_SIZE * dt;
     while (remaining > 0 && c.pathIndex < c.path.length) {
       const targetTile = c.path[c.pathIndex]!;
       const tx = targetTile.x * TILE_SIZE + TILE_SIZE / 2;
@@ -661,7 +724,7 @@ export function stepSimulation(
         }
         if (mods.armorShred) c.shredTimer = Math.max(c.shredTimer, 3.0);
 
-        damageCreep(c, dmg, { isCrit: false, sourceTowerId: tower.id });
+        damageCreep(c, dmg, { isCrit: false, magic: mods.magicDamage, sourceTowerId: tower.id });
       }
 
       // Yellow Lightning on a Pulse arcs out from the first creep
@@ -685,14 +748,16 @@ export function stepSimulation(
 
     for (const c of sim.creeps) {
       if (c.hp <= 0) continue;
+      // Cannon shells are lobbed at the ground: they can never hit a flier.
+      if (tower.type === 'cannon' && c.trait === 'flier') continue;
       const d = Math.hypot(c.x - cx, c.y - cy);
       if (d > rangePx) continue;
 
       let metric = 0;
-      if (tower.targeting === 'first') metric = c.pathIndex * 1000 - d * 0.01;
+      if (tower.targeting === 'first') metric = routeProgress(c) * 1000 - d * 0.01;
       else if (tower.targeting === 'strongest') metric = c.hp;
       else if (tower.targeting === 'fresh') {
-        metric = c.pathIndex * 1000 - d * 0.01;
+        metric = routeProgress(c) * 1000 - d * 0.01;
         if (carriesDebuff(c, appliesVenom, appliesBurn)) metric -= 1e9;
       } else metric = -d;
 
@@ -754,6 +819,9 @@ export function stepSimulation(
       if (mods.armorShred) target.shredTimer = Math.max(target.shredTimer, 3.2);
 
       damageCreep(target, dmg, { isCrit, ignoreArmor: true, sourceTowerId: tower.id });
+      if (mods.pierceCount > 0) {
+        pierceFrom(target, mods.pierceCount, dmg, tower.id, elColor);
+      }
 
       if (totalSplash > 0) {
         const visSplash = Math.min(36, Math.max(16, totalSplash * 0.45));
@@ -814,6 +882,8 @@ export function stepSimulation(
         spreadVenomOnChain: mods.spreadVenomOnChain,
         isCrit,
         ignoreArmor: def.armorPierce,
+        magic: mods.magicDamage,
+        pierceCount: mods.pierceCount,
         sourceTowerId: tower.id,
       });
     }
@@ -864,11 +934,21 @@ export function stepSimulation(
         if (p.shredArmor) {
           target.shredTimer = Math.max(target.shredTimer, 3.2);
         }
-        damageCreep(target, p.damage * mult, {
+        // Harpoons: built for the air, weak against the ground; a direct hit pins.
+        let typeMult = 1;
+        if (p.towerType === 'harpoon') {
+          typeMult = target.trait === 'flier' ? HARPOON_AIR_MULT : HARPOON_GROUND_MULT;
+          if (target === liveTarget) {
+            const pin = HARPOON_PIN_SECONDS * (target.trait === 'boss' ? HARPOON_BOSS_PIN_SHARE : 1);
+            target.pinTimer = Math.max(target.pinTimer ?? 0, pin);
+          }
+        }
+        damageCreep(target, p.damage * mult * typeMult, {
           isCrit: p.isCrit && mult === 1,
           ignoreArmor: p.ignoreArmor,
-          // Splash on anything but the creep the shot was aimed at is magic.
-          magic: target !== liveTarget,
+          // Arcane shots are all magic; otherwise splash on anything but the creep the
+          // shot was aimed at is magic.
+          magic: Boolean(p.magic) || target !== liveTarget,
           sourceTowerId: p.sourceTowerId,
         });
       };
@@ -878,6 +958,8 @@ export function stepSimulation(
       if (p.splashRadius > 0) {
         for (const c of sim.creeps) {
           if (c.hp <= 0) continue;
+          // A cannon shell bursts on the ground; fliers are above the blast.
+          if (p.towerType === 'cannon' && c.trait === 'flier') continue;
           const d = Math.hypot(c.x - impactX, c.y - impactY);
           if (d <= p.splashRadius) {
             if (!chainAnchor) chainAnchor = c;
@@ -893,6 +975,10 @@ export function stepSimulation(
         if (p.element === 'green') {
           spawnRing(impactX, impactY, 15, '#34D399', 0.15, 0.08);
         }
+      }
+
+      if (p.pierceCount && p.pierceCount > 0 && liveTarget) {
+        pierceFrom(liveTarget, p.pierceCount, p.damage, p.sourceTowerId, elColor);
       }
 
       if (p.chainCount > 0 && chainAnchor) {
