@@ -302,6 +302,10 @@ const isPreBoss = computed(() => props.wave % 5 === 4);
         {{ currentWaveDef.count }}x{{ currentWaveDef.modifier === 'escort' ? ' + 2 heroes' : '' }} ·
         {{ currentWaveDef.hp.toLocaleString() }} HP · {{ Math.round(currentWaveDef.armor * 100) }}% Armor
       </div>
+      <p v-if="currentWaveDef.horde" class="text-[11px] text-amber-200 leading-snug pt-0.5">
+        <span class="font-semibold text-amber-300">{{ world.text.horde.label }}:</span>
+        {{ world.text.horde.detail }}
+      </p>
       <p v-if="currentWaveDef.modifier" class="text-[11px] text-sky-200 leading-snug pt-0.5">
         <span class="font-semibold text-sky-300">{{ world.text.modifiers[currentWaveDef.modifier].label }}:</span>
         {{ world.text.modifiers[currentWaveDef.modifier].detail }}

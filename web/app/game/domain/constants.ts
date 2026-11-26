@@ -358,8 +358,24 @@ export const HERO_BOUNTY_MULT = 3;
 export const HERO_LIVES_COST = 2;
 /** While the vanguard lives, the rest of its wave moves this much faster. */
 export const VANGUARD_SPEED_BONUS = 0.15;
-/** While the warden lives, the rest of its wave heals this share of max HP per second. */
-export const WARDEN_REGEN_PER_SEC = 0.015;
+/**
+ * While the warden lives, the rest of its wave heals this share of max HP per second.
+ * Venom-poisoned creeps get no heal, so Venom is the counter.
+ */
+export const WARDEN_REGEN_PER_SEC = 0.01;
+
+/**
+ * The wave before every boss wave is a horde: this many times the creeps, spawning a bit
+ * faster, each a little frailer so the wave is not twice as tough in total.
+ */
+export const HORDE_COUNT_MULT = 2;
+export const HORDE_HP_MULT = 0.75;
+export const HORDE_SPAWN_INTERVAL_MULT = 0.7;
+
+/** True for the wave right before each boss wave (4, 9, 14 …). */
+export function isHordeWave(wave: number): boolean {
+  return wave % 5 === 4;
+}
 
 /**
  * Which special a wave carries. Boss waves (every 5th) have none; otherwise every
@@ -380,8 +396,17 @@ export function getWaveDefinition(
   difficulty: DifficultyId = 'standard'
 ): WaveDefinition {
   const base = baseWaveDefinition(wave, difficulty);
+  const def: WaveDefinition = isHordeWave(wave)
+    ? {
+        ...base,
+        count: base.count * HORDE_COUNT_MULT,
+        hp: Math.round(base.hp * HORDE_HP_MULT),
+        spawnInterval: Number((base.spawnInterval * HORDE_SPAWN_INTERVAL_MULT).toFixed(2)),
+        horde: true,
+      }
+    : base;
   const modifier = getWaveModifier(wave);
-  return modifier ? { ...base, modifier } : base;
+  return modifier ? { ...def, modifier } : def;
 }
 
 // Rebalanced tougher wave curve scaled by selected difficulty

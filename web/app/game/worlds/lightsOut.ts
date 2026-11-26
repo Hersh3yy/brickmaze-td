@@ -6,6 +6,7 @@ import {
   RALLY_TOUGHNESS_PER_KILL,
   VANGUARD_SPEED_BONUS,
   WARDEN_REGEN_PER_SEC,
+  HORDE_COUNT_MULT,
 } from '../domain/constants';
 
 /**
@@ -616,8 +617,12 @@ export const lightsOut: WorldDefinition = {
       },
       escort: {
         label: 'Escort',
-        detail: `A Toothpick Herald leads (+${Math.round(VANGUARD_SPEED_BONUS * 100)}% wave speed while it lives) and a Mendwife trails (heals the wave ${Math.round(WARDEN_REGEN_PER_SEC * 100)}%/s while she lives). Each costs ${HERO_LIVES_COST} lives if it reaches the pantry.`,
+        detail: `A Toothpick Herald leads (+${Math.round(VANGUARD_SPEED_BONUS * 100)}% wave speed while it lives) and a Mendwife trails (heals the wave ${WARDEN_REGEN_PER_SEC * 100}%/s while she lives; poisoned mice get no heal). Each costs ${HERO_LIVES_COST} lives if it reaches the pantry.`,
       },
+    },
+    horde: {
+      label: 'Stampede',
+      detail: `Right before the big one, ${HORDE_COUNT_MULT}× as many mice pour out of the walls. Crumbs for everyone.`,
     },
   },
   sprites,

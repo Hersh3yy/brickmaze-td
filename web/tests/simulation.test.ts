@@ -148,6 +148,17 @@ describe('wave specials', () => {
     expect(getWaveDefinition(28).modifier).toBeUndefined()
   })
 
+  it('makes the wave before every boss a horde with double the creeps', () => {
+    // Pre-boss waves are always the swift kind: 14 + min(14, wave/2) creeps, doubled.
+    for (const w of [4, 9, 14, 19, 24, 29]) {
+      const def = getWaveDefinition(w)
+      expect(def.horde).toBe(true)
+      expect(def.count).toBe(2 * (14 + Math.min(14, Math.floor(w * 0.5))))
+    }
+    expect(getWaveDefinition(8).horde).toBeUndefined()
+    expect(getWaveDefinition(10).horde).toBeUndefined()
+  })
+
   function startWave(wave: number) {
     const grid = createInitialGrid('crossroad')
     const path = computeMazePath(grid, 'crossroad').path
@@ -172,6 +183,30 @@ describe('wave specials', () => {
     expect(spawnedInOrder[0]!.hero).toBe('vanguard')
     expect(spawnedInOrder.at(-1)!.hero).toBe('warden')
     expect(spawnedInOrder[0]!.maxHp).toBe(def.hp * 2.5)
+  })
+
+  it('the warden heals the wave 1%/s, but not creeps poisoned by Venom', () => {
+    const { sim, world } = startWave(16)
+    const [poisoned, clean] = sim.creeps.filter((c) => !c.hero)
+    for (const c of [poisoned!, clean!]) c.hp = c.maxHp / 2
+    poisoned!.poisonTimer = 5
+    poisoned!.poisonDps = 0
+    const before = { p: poisoned!.hp, c: clean!.hp }
+    stepSimulation(sim, world, 1, 99999, {}, mulberry32(9))
+    expect(poisoned!.hp).toBe(before.p)
+    expect(clean!.hp).toBeCloseTo(before.c + clean!.maxHp * 0.01, 3)
+  })
+
+  it('spreads stacked creeps sideways without moving them along the path', () => {
+    const { sim, world } = startWave(2)
+    const [a, b] = sim.creeps
+    b!.x = a!.x; b!.y = a!.y; b!.pathIndex = a!.pathIndex
+    b!.ox = 0; b!.oy = 0; a!.ox = 0; a!.oy = 0
+    for (let k = 0; k < 30; k++) stepSimulation(sim, world, 1 / 60, 200000 + k * 16, {}, mulberry32(11))
+    const gap = Math.hypot(a!.x + a!.ox! - (b!.x + b!.ox!), a!.y + a!.oy! - (b!.y + b!.oy!))
+    expect(gap).toBeGreaterThan(8)
+    // Same spot on the path: crowding is drawn only.
+    expect(Math.hypot(a!.x - b!.x, a!.y - b!.y)).toBeLessThan(1e-6)
   })
 
   it('rally waves make the rest of the wave 2% tougher per kill, capped at +40%', () => {

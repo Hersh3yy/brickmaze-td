@@ -52,6 +52,8 @@ export interface SimState {
   impactRings: ImpactRing[];
   particles: Particle[];
   floatingTexts: FloatingText[];
+  /** Rotates through FLOAT_TEXT_FAN so numbers spawned together spread out. */
+  floatTextSlot: number;
   spawnQueueLeft: number;
   spawnTimer: number;
   longestPathSeen: number;
@@ -97,6 +99,7 @@ export function createSimState(longestPathSeen = 0): SimState {
     impactRings: [],
     particles: [],
     floatingTexts: [],
+    floatTextSlot: 0,
     spawnQueueLeft: 0,
     spawnTimer: 0,
     longestPathSeen,
@@ -154,6 +157,78 @@ export function nextUid(prefix: string): string {
 type Point = { x: number; y: number };
 
 // Particles per burst. Kept small: the board is busy and old phones pay for every one.
+/** Sideways px offsets that floating numbers cycle through. */
+const FLOAT_TEXT_FAN = [0, -7, 7, -3, 3] as const;
+
+/** Where a creep is drawn: its spot on the path plus its crowd nudge. */
+function drawnPos(c: Creep): Point {
+  return { x: c.x + (c.ox ?? 0), y: c.y + (c.oy ?? 0) };
+}
+
+// --- Crowd spreading ----------------------------------------------------------
+/** Furthest a creep is nudged off the centre of its lane, in px. */
+const CROWD_MAX_OFFSET = TILE_SIZE * 0.3;
+/** Creeps closer than (radius a + radius b) × this get pushed apart. */
+const CROWD_SPACING = 1.1;
+/** How fast offsets ease back to the lane centre once the crowd thins (per second). */
+const CROWD_RELAX = 2.5;
+
+/**
+ * Soft collision: creeps that would draw on top of each other are nudged sideways,
+ * across their direction of travel, so a crowd walks side by side instead of stacked.
+ * It only moves the drawn offset (ox/oy), never the path position, so it cannot change
+ * who leads, how long the route is, or what is in range. Fliers only bump fliers.
+ */
+function separateCreeps(creeps: Creep[], dt: number): void {
+  const relax = Math.exp(-CROWD_RELAX * dt);
+  const ease = Math.min(1, 10 * dt);
+  for (const c of creeps) {
+    c.ox = (c.ox ?? 0) * relax;
+    c.oy = (c.oy ?? 0) * relax;
+  }
+  for (let i = 0; i < creeps.length; i++) {
+    const a = creeps[i]!;
+    if (a.hp <= 0) continue;
+    const aAir = a.trait === 'flier';
+    // Sideways for a: the normal of its heading towards its next path tile.
+    const next = a.path[a.pathIndex];
+    let hx = next ? next.x * TILE_SIZE + TILE_SIZE / 2 - a.x : 1;
+    let hy = next ? next.y * TILE_SIZE + TILE_SIZE / 2 - a.y : 0;
+    const hl = Math.hypot(hx, hy) || 1;
+    hx /= hl;
+    hy /= hl;
+    const sx = -hy;
+    const sy = hx;
+    for (let j = i + 1; j < creeps.length; j++) {
+      const b = creeps[j]!;
+      if (b.hp <= 0 || (b.trait === 'flier') !== aAir) continue;
+      const dx = b.x + b.ox! - (a.x + a.ox!);
+      const dy = b.y + b.oy! - (a.y + a.oy!);
+      const minDist = (a.radius + b.radius) * CROWD_SPACING;
+      const d2 = dx * dx + dy * dy;
+      if (d2 >= minDist * minDist) continue;
+      const overlap = minDist - Math.sqrt(d2);
+      // Which side b is on; dead level (same spot) alternates by spawn order.
+      const side = dx * sx + dy * sy;
+      const sign = Math.abs(side) > 0.01 ? Math.sign(side) : j % 2 === 0 ? 1 : -1;
+      // Bigger creeps (bosses, heroes) shove harder and get shoved less.
+      const share = b.radius / (a.radius + b.radius);
+      const push = overlap * ease;
+      a.ox! -= sx * sign * push * share;
+      a.oy! -= sy * sign * push * share;
+      b.ox! += sx * sign * push * (1 - share);
+      b.oy! += sy * sign * push * (1 - share);
+    }
+  }
+  for (const c of creeps) {
+    const m = Math.hypot(c.ox!, c.oy!);
+    if (m > CROWD_MAX_OFFSET) {
+      c.ox! *= CROWD_MAX_OFFSET / m;
+      c.oy! *= CROWD_MAX_OFFSET / m;
+    }
+  }
+}
+
 const HIT_BURST = 3;
 const KILL_BURST = 5;
 const BOSS_KILL_BURST = 12;
@@ -336,8 +411,15 @@ export function stepSimulation(
     sim.impactRings.push({ id: nextUid('rg'), x, y, maxRadius, color, fillAlpha, ttl, maxTtl: ttl });
   };
 
+  // Numbers over creeps are short-lived and fanned out a little sideways, so a burst of
+  // crits on a crowd does not stack into one unreadable blob.
   const addFloatingText = (x: number, y: number, text: string, color: string) => {
-    sim.floatingTexts.push({ id: nextUid('ft'), x, y, text, color, ttl: 0.72, maxTtl: 0.72 });
+    sim.floatTextSlot = (sim.floatTextSlot + 1) % FLOAT_TEXT_FAN.length;
+    const fx = x + FLOAT_TEXT_FAN[sim.floatTextSlot]!;
+    sim.floatingTexts.push({ id: nextUid('ft'), x: fx, y, text, color, ttl: 0.45, maxTtl: 0.45 });
+  };
+  const addBanner = (x: number, y: number, text: string, color: string) => {
+    sim.floatingTexts.push({ id: nextUid('ft'), x, y, text, color, ttl: 1.1, maxTtl: 1.1, big: true });
   };
 
   // Rally waves: every kill makes the rest of the wave tougher, including creeps not yet
@@ -377,14 +459,14 @@ export function stepSimulation(
     if (srcTower) srcTower.totalDamage += dealt;
 
     if (opts.isCrit) {
-      addFloatingText(creep.x, creep.y - 12, `${Math.round(dealt)}!`, '#FDE047');
+      addFloatingText(creep.x + (creep.ox ?? 0), creep.y + (creep.oy ?? 0) - 12, `${Math.round(dealt)}!`, '#FDE047');
     }
 
     if (creep.hp <= 0) {
       sim.totalKills += 1;
       if (srcTower) srcTower.kills += 1;
       world.gold += creep.bounty;
-      addFloatingText(creep.x, creep.y - 8, `+${creep.bounty}g`, '#FBBF24');
+      addFloatingText(creep.x + (creep.ox ?? 0), creep.y + (creep.oy ?? 0) - 8, `+${creep.bounty}g`, '#FBBF24');
       spawnBurst(
         creep.x,
         creep.y,
@@ -434,7 +516,7 @@ export function stepSimulation(
     if (chainCount <= 0) return;
     const hitIds = new Set<string>([originCreep.id]);
     const jaggedChain: Point[] = [];
-    let prevPt: Point = { x: originCreep.x, y: originCreep.y };
+    let prevPt: Point = drawnPos(originCreep);
     let chainDmg = baseDamage * 0.68;
 
     for (let jump = 0; jump < chainCount; jump++) {
@@ -451,10 +533,10 @@ export function stepSimulation(
       if (!nextTarget) break;
 
       hitIds.add(nextTarget.id);
-      const seg = buildJaggedPoints(prevPt, { x: nextTarget.x, y: nextTarget.y }, 4, rng);
+      const seg = buildJaggedPoints(prevPt, drawnPos(nextTarget), 4, rng);
       if (jaggedChain.length === 0) jaggedChain.push(...seg);
       else jaggedChain.push(...seg.slice(1));
-      prevPt = { x: nextTarget.x, y: nextTarget.y };
+      prevPt = drawnPos(nextTarget);
 
       if (opts.spreadVenom && opts.slowFactor > 0) {
         nextTarget.slowTimer = Math.max(nextTarget.slowTimer, opts.slowDuration);
@@ -510,7 +592,7 @@ export function stepSimulation(
   }
   for (let i = sim.floatingTexts.length - 1; i >= 0; i--) {
     const ft = sim.floatingTexts[i]!;
-    ft.y -= 26 * rawDt;
+    ft.y -= (ft.big ? 26 : 44) * rawDt;
     ft.ttl -= rawDt;
     if (ft.ttl <= 0) sim.floatingTexts.splice(i, 1);
   }
@@ -587,8 +669,8 @@ export function stepSimulation(
       c.hp = Math.min(c.maxHp, c.hp + c.maxHp * 0.055 * dt);
     }
 
-    // Escort aura: the warden heals the rest of its wave while it lives.
-    if (wardenAlive && !c.hero && c.hp < c.maxHp) {
+    // Escort aura: the warden heals the rest of its wave while it lives. Venom blocks it.
+    if (wardenAlive && !c.hero && c.poisonTimer <= 0 && c.hp < c.maxHp) {
       c.hp = Math.min(c.maxHp, c.hp + c.maxHp * WARDEN_REGEN_PER_SEC * dt);
     }
 
@@ -612,7 +694,7 @@ export function stepSimulation(
     if (c.hp <= 0) {
       sim.totalKills += 1;
       world.gold += c.bounty;
-      addFloatingText(c.x, c.y - 8, `+${c.bounty}g`, c.poisonTimer > 0 ? '#4ADE80' : '#FB923C');
+      addFloatingText(c.x + (c.ox ?? 0), c.y + (c.oy ?? 0) - 8, `+${c.bounty}g`, c.poisonTimer > 0 ? '#4ADE80' : '#FB923C');
       spawnBurst(c.x, c.y, c.poisonTimer > 0 ? '#10B981' : '#EF4444', KILL_BURST);
       onCreepKilled(c);
       sim.creeps.splice(i, 1);
@@ -654,6 +736,8 @@ export function stepSimulation(
       sim.creeps.splice(i, 1);
     }
   }
+
+  separateCreeps(sim.creeps, dt);
 
   if (livesLostThisFrame > 0) {
     events.lifeLost?.();
@@ -792,11 +876,8 @@ export function stepSimulation(
         id: nextUid('sn'),
         points:
           mods.primaryElement === 'yellow'
-            ? buildJaggedPoints({ x: muzzleX, y: muzzleY }, { x: target.x, y: target.y }, 5, rng)
-            : [
-                { x: muzzleX, y: muzzleY },
-                { x: target.x, y: target.y },
-              ],
+            ? buildJaggedPoints({ x: muzzleX, y: muzzleY }, drawnPos(target), 5, rng)
+            : [{ x: muzzleX, y: muzzleY }, drawnPos(target)],
         color: elColor,
         coreColor: '#FFFFFF',
         ttl: 0.18,
@@ -861,8 +942,8 @@ export function stepSimulation(
         startX: muzzleX,
         startY: muzzleY,
         targetId: target.id,
-        targetX: target.x,
-        targetY: target.y,
+        targetX: target.x + (target.ox ?? 0),
+        targetY: target.y + (target.oy ?? 0),
         angle: tower.angle,
         speed: def.projectileSpeed,
         distanceTotal: distTotal,
@@ -894,8 +975,8 @@ export function stepSimulation(
     const p = sim.projectiles[i]!;
     const liveTarget = sim.creeps.find((c) => c.id === p.targetId && c.hp > 0);
     if (liveTarget && p.towerType !== 'cannon') {
-      p.targetX = liveTarget.x;
-      p.targetY = liveTarget.y;
+      p.targetX = liveTarget.x + (liveTarget.ox ?? 0);
+      p.targetY = liveTarget.y + (liveTarget.oy ?? 0);
     }
 
     const dx = p.targetX - p.x;
@@ -1009,7 +1090,7 @@ export function stepSimulation(
     sim.projectiles.length = 0;
     const clearedWave = world.wave;
     world.gold += waveDef.clearBonus;
-    addFloatingText(432, 260, `Wave ${clearedWave} Cleared · +${waveDef.clearBonus}g`, '#34D399');
+    addBanner(432, 260, `Wave ${clearedWave} Cleared · +${waveDef.clearBonus}g`, '#34D399');
     events.waveCleared?.(clearedWave, waveDef.clearBonus, !world.endlessMode && clearedWave >= MAX_WAVES);
   }
 }

@@ -117,6 +117,13 @@ export interface Creep {
   hero?: HeroRole;
   /** Seconds left pinned in place by a Harpoon. */
   pinTimer?: number;
+  /**
+   * Sideways nudge (px) that keeps creeps from drawing on top of each other. Only where a
+   * creep is drawn and aimed at uses it; its place on the path (and range checks) do not,
+   * so crowding never changes who is in front or how long the maze is.
+   */
+  ox?: number;
+  oy?: number;
 }
 
 export interface Projectile {
@@ -197,6 +204,8 @@ export interface FloatingText {
   color: string;
   ttl: number;
   maxTtl: number;
+  /** Banner text (wave cleared) drawn larger than the numbers over creeps. */
+  big?: boolean;
 }
 
 /** A colour-pair synergy. Its name and effect text live in the World (game/worlds). */
@@ -261,6 +270,8 @@ export interface WaveDefinition {
   spawnInterval: number;
   clearBonus: number;
   modifier?: WaveModifier;
+  /** The wave before a boss: double the creeps. Can carry a modifier on top. */
+  horde?: boolean;
 }
 
 export interface PlayerStats {

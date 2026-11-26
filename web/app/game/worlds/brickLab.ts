@@ -5,6 +5,7 @@ import {
   RALLY_TOUGHNESS_PER_KILL,
   VANGUARD_SPEED_BONUS,
   WARDEN_REGEN_PER_SEC,
+  HORDE_COUNT_MULT,
 } from '../domain/constants';
 
 /**
@@ -567,8 +568,12 @@ export const brickLab: WorldDefinition = {
       },
       escort: {
         label: 'Escort',
-        detail: `A Vanguard leads (+${Math.round(VANGUARD_SPEED_BONUS * 100)}% wave speed while alive) and a Warden trails (heals the wave ${Math.round(WARDEN_REGEN_PER_SEC * 100)}%/s while alive). Heroes cost ${HERO_LIVES_COST} lives if they leak.`,
+        detail: `A Vanguard leads (+${Math.round(VANGUARD_SPEED_BONUS * 100)}% wave speed while alive) and a Warden trails (heals the wave ${WARDEN_REGEN_PER_SEC * 100}%/s while alive; Venom-poisoned creeps get no heal). Heroes cost ${HERO_LIVES_COST} lives if they leak.`,
       },
+    },
+    horde: {
+      label: 'Horde',
+      detail: `The wave before the boss brings ${HORDE_COUNT_MULT}× the creeps, packed tighter. Cash in before the boss.`,
     },
   },
   sprites,

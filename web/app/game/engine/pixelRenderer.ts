@@ -818,8 +818,8 @@ function drawCreep(ctx: CanvasRenderingContext2D, creep: Creep) {
   // A voxel creep's footprint is about 60% of its canvas; its drawn height is the model's.
   const drawW = voxel ? Math.round(sprite.width * 0.6) : pixelW;
   const drawH = voxel ? Math.round(voxel.height + 3) : Math.round((sprite.height / sprite.width) * drawW);
-  const x = Math.round(creep.x);
-  const y = Math.round(creep.y);
+  const x = Math.round(creep.x + (creep.ox ?? 0));
+  const y = Math.round(creep.y + (creep.oy ?? 0));
   // Fliers are drawn raised above a small, faint shadow with a slow bob, so they read as
   // airborne over the maze.
   const lift = creep.trait === 'flier' ? 12 + Math.round(Math.sin(creep.animTime * 3) * 2) : 0;
@@ -1372,10 +1372,12 @@ export function renderArenaFrame(ctx: CanvasRenderingContext2D, frame: RenderFra
 
   // 15. Floating numbers (crits, kill bounties, wave banner)
   if (frame.floatingTexts.length > 0) {
-    ctx.font = 'bold 11px "JetBrains Mono", monospace';
+    const small = 'bold 8px "JetBrains Mono", monospace';
+    const big = 'bold 12px "JetBrains Mono", monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     for (const ft of frame.floatingTexts) {
+      ctx.font = ft.big ? big : small;
       ctx.globalAlpha = Math.max(0, ft.ttl / ft.maxTtl);
       ctx.fillStyle = '#0F172A';
       ctx.fillText(ft.text, Math.round(ft.x) + 1, Math.round(ft.y) + 1);

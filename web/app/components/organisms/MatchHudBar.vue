@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ArrowLeft, Coins, Heart, Keyboard, Play, Skull } from '@lucide/vue';
-import { DIFFICULTY_DEFS, MAX_WAVES, getWaveModifier } from '~/game/domain/constants';
+import { DIFFICULTY_DEFS, MAX_WAVES, getWaveModifier, isHordeWave } from '~/game/domain/constants';
 import type { DifficultyId, GamePhase } from '~/game/domain/types';
 
 const props = defineProps<{
@@ -44,11 +44,18 @@ const canSendWave = computed(() => props.phase === 'BUILD_MANAGE');
 const isBossWave = computed(() => props.wave % 5 === 0);
 const world = useWorld();
 const waveModifier = computed(() => getWaveModifier(props.wave));
+const modifierLabel = computed(() => {
+  const labels = [
+    isHordeWave(props.wave) ? world.value.text.horde.label : undefined,
+    waveModifier.value ? world.value.text.modifiers[waveModifier.value].label : undefined,
+  ].filter(Boolean);
+  return labels.length ? labels.join(' · ') : undefined;
+});
 const waveSubtext = computed(() =>
   isBossWave.value
     ? 'BOSS'
-    : waveModifier.value
-      ? world.value.text.modifiers[waveModifier.value].label
+    : modifierLabel.value
+      ? modifierLabel.value
       : props.endlessMode
       ? 'Endless'
       : props.difficulty !== 'standard'

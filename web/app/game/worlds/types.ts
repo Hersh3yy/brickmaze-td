@@ -70,6 +70,8 @@ export interface WorldText {
   bosses: string[];
   heroes: Record<HeroRole, string>;
   modifiers: Record<WaveModifier, { label: string; detail: string }>;
+  /** The double-size wave before each boss. */
+  horde: { label: string; detail: string };
   /** What a plain gray maze wall is called, e.g. "Gray Maze Wall" or "Wooden Block". */
   wall: string;
   /** The defenders and the attackers as groups, for menus and banners. */

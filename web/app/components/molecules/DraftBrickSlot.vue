@@ -45,9 +45,11 @@ const stateLabel = computed(() =>
         : `#${props.index + 1}`
 );
 
-const roleHint = computed(() =>
-  props.color === 'yellow' ? 'Speed & Chain' : props.color === 'red' ? 'DMG & Splash' : 'Slow & DoT'
-);
+// "Lightning · Speed & Chain" → "Speed & Chain", in the current World's words.
+const roleHint = computed(() => {
+  const short = world.value.text.elements[props.color].bonusShort;
+  return short.split(' · ')[1] ?? short;
+});
 </script>
 
 <template>
